@@ -42,3 +42,11 @@ def test_if_above_the_adc_first_nyquist_zone_is_rejected():
 def test_zero_or_negative_frequencies_are_rejected_without_lo():
     with pytest.raises(FrequencyError, match="above 0"):
         plan_sweep(profile(None), rf_start=0.0, rf_stop=100.0)
+
+
+def test_drive_tones_may_use_the_dac_range_beyond_the_adc_limit():
+    plan = plan_sweep(profile(6800.0), rf_start=9900.0, rf_stop=10100.0, drive_only=True)
+    assert (plan.if_start, plan.if_stop) == (3100.0, 3300.0)
+
+    with pytest.raises(FrequencyError, match="4915.20 MHz"):
+        plan_sweep(profile(None), rf_start=4000.0, rf_stop=5000.0, drive_only=True)

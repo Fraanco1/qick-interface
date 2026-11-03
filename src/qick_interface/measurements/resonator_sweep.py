@@ -5,9 +5,9 @@ import numpy as np
 from pydantic import BaseModel, Field
 from qick.asm_v2 import AsmV2, AveragerProgramV2, QickSweep1D
 
-from ..board import gen_channel, readout_channel
+from ..board import readout_channel
 from ..frequency import plan_sweep, rf_from_if
-from ..iq import iq_output
+from ..iq import TonesMixin, outputs
 from ..profiles import SetupProfile
 from .base import Update
 
@@ -25,32 +25,27 @@ class ResonatorSweepParams(BaseModel):
     final_delay_us: float = Field(1.0, ge=0, title="Repetition delay", json_schema_extra={"unit": "µs", "group": "Timing"})
 
 
-class _Program(AveragerProgramV2):
+class _Program(TonesMixin, AveragerProgramV2):
     def _initialize(self, cfg):
-        gen, ro = cfg["gen"], cfg["ro"]
-        self.declare_gen(ch=gen, nqz=1)
+        ro = cfg["ro"]
+        self.declare_outputs(cfg)
         self.declare_readout(ch=ro, length=cfg["readout_length"])
-        self.add_readoutconfig(ch=ro, name="ro", freq=cfg["freq"], gen_ch=gen)
+        self.add_readoutconfig(ch=ro, name="ro", freq=cfg["freq"], gen_ch=cfg["outputs"][0].gen)
         push_ro = AsmV2()
         push_ro.send_readoutconfig(ch=ro, name="ro", t=0)
         self.add_loop("freq", cfg["points"], exec_before=push_ro)
-        self.add_pulse(ch=gen, name="probe", ro_ch=ro, style="const", freq=cfg["freq"],
-                       length=cfg["pulse_length"], phase=0, gain=cfg["gain"])
-        if "q_gen" in cfg:  # I/Q output: same tone on a second DAC, phase-locked through ro_ch
-            self.declare_gen(ch=cfg["q_gen"], nqz=1)
-            self.add_pulse(ch=cfg["q_gen"], name="probe_q", ro_ch=ro, style="const", freq=cfg["freq"],
-                           length=cfg["pulse_length"], phase=cfg["q_phase"], gain=cfg["q_gain"])
+        self.add_tone(cfg, "probe", freq=cfg["freq"], length=cfg["pulse_length"], gain=cfg["gain"])
 
     def _body(self, cfg):
-        self.pulse(ch=cfg["gen"], name="probe", t=0)
-        if "q_gen" in cfg:
-            self.pulse(ch=cfg["q_gen"], name="probe_q", t=0)
+        self.play_tone(cfg, "probe", t=0)
         self.trigger(ros=[cfg["ro"]], pins=[0], t=cfg["trigger_delay"])
 
 
 class ResonatorSweep:
     name = "Resonator sweep"
     Params = ResonatorSweepParams
+    x_axis = {"title": "Frequency", "unit": "MHz"}
+    marker_sets = "readout_freq_mhz"  # chip parameter the marker can be stored as
 
     @staticmethod
     def if_axis(program) -> np.ndarray:
@@ -62,7 +57,7 @@ class ResonatorSweep:
             should_stop: Callable[[], bool] = lambda: False) -> Iterator[Update]:
         plan = plan_sweep(profile, params.rf_start_mhz, params.rf_stop_mhz)
         cfg = {
-            "gen": gen_channel(board.soccfg, profile.readout_dac),
+            "outputs": outputs(board.soccfg, profile),
             "ro": readout_channel(board.soccfg, profile.readout_adc),
             "freq": QickSweep1D("freq", plan.if_start, plan.if_stop),
             "points": params.points,
@@ -71,8 +66,6 @@ class ResonatorSweep:
             "readout_length": params.readout_length_us,
             "trigger_delay": params.trigger_delay_us,
         }
-        if profile.output_path == "iq":
-            cfg.update(iq_output(board.soccfg, profile, params.gain))
         program = _Program(board.soccfg, reps=params.averages, final_delay=params.final_delay_us, cfg=cfg)
         if_mhz = cls.if_axis(program)
         rf = rf_from_if(profile, if_mhz)

@@ -162,8 +162,8 @@ def test_controller_plays_an_iq_calibration_tone_and_turns_it_off(tmp_path):
         assert client.post("/api/tone", json=tone, headers=as_client("alice")).json()["tone"]["rf_mhz"] == 7000.0
 
         played = board.playing
-        assert played.get_pulse_param("tone_i", "freq") == pytest.approx(200.0, abs=0.001)
-        assert played.get_pulse_param("tone_q", "phase") - played.get_pulse_param("tone_i", "phase") == pytest.approx(94.0)
+        assert played.get_pulse_param("tone", "freq") == pytest.approx(200.0, abs=0.001)
+        assert played.get_pulse_param("tone_q", "phase") - played.get_pulse_param("tone", "phase") == pytest.approx(94.0)
         assert played.get_pulse_param("tone_q", "gain") == pytest.approx(0.3 * 0.95, abs=1e-4)
 
         assert client.post("/api/tone/off", headers=as_client("alice")).json()["tone"] is None
@@ -180,3 +180,12 @@ def test_controller_records_chip_parameters_that_viewers_can_read(client):
     client.patch("/api/parameters/Loopback", json={"qubit_freq_mhz": 10021.0}, headers=as_client("alice"))
 
     assert client.get("/api/parameters/Loopback").json() == {"readout_freq_mhz": 7012.5, "qubit_freq_mhz": 10021.0}
+
+
+def test_each_measurement_says_which_chip_parameter_its_marker_sets(client):
+    measurements = client.get("/api/measurements").json()
+
+    assert measurements["resonator_sweep"]["marker_sets"] == "readout_freq_mhz"
+    assert measurements["two_tone"]["marker_sets"] == "qubit_freq_mhz"
+    readout = measurements["two_tone"]["params"]["properties"]["readout_freq_mhz"]
+    assert readout["from_chip"] == "readout_freq_mhz"

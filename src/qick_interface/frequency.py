@@ -3,8 +3,9 @@ from dataclasses import dataclass
 
 from .profiles import SetupProfile
 
-# Readouts sample at 4423.68 Msps (board firmware); we only use the first Nyquist zone.
+# First Nyquist zones of the board firmware: readouts sample at 4423.68 Msps, generators at 9830.4 Msps.
 MAX_IF_MHZ = 4423.68 / 2
+MAX_DRIVE_IF_MHZ = 9830.4 / 2
 
 
 class FrequencyError(ValueError):
@@ -19,7 +20,9 @@ class SweepPlan:
     image_stop: float | None
 
 
-def plan_sweep(profile: SetupProfile, rf_start: float, rf_stop: float) -> SweepPlan:
+def plan_sweep(profile: SetupProfile, rf_start: float, rf_stop: float, drive_only: bool = False) -> SweepPlan:
+    """IF range for an RF range. Readout tones must fit the ADC; tones that are only
+    sent (drive_only, e.g. a qubit tone) only need to fit the DAC."""
     lo = profile.lo_mhz
     sign = 1 if profile.sideband == "upper" else -1
     if lo is None:
@@ -35,10 +38,11 @@ def plan_sweep(profile: SetupProfile, rf_start: float, rf_stop: float) -> SweepP
                 f"({lo:g} MHz); requested {rf_start:g}–{rf_stop:g} MHz."
             )
 
-    if max(if_start, if_stop) > MAX_IF_MHZ:
+    limit, what = (MAX_DRIVE_IF_MHZ, "output") if drive_only else (MAX_IF_MHZ, "readout")
+    if max(if_start, if_stop) > limit:
         raise FrequencyError(
-            f"IF up to {max(if_start, if_stop):g} MHz exceeds the readout limit of "
-            f"{MAX_IF_MHZ:.2f} MHz; move the LO closer to the RF range."
+            f"IF up to {max(if_start, if_stop):g} MHz exceeds the {what} limit of "
+            f"{limit:.2f} MHz; move the LO closer to the RF range."
         )
 
     if lo is None:

@@ -11,11 +11,12 @@ from pydantic import BaseModel, ValidationError
 from .calibration import IqTone, iq_tone_program
 from .frequency import FrequencyError
 from .measurements.resonator_sweep import ResonatorSweep
+from .measurements.two_tone import TwoTone
 from .profiles import ChipParameters, SetupProfile, load_parameters, load_profiles, save_profile, update_parameters
 from .session import Busy, NotController, Session
 
 STATIC = Path(__file__).parent / "static"
-MEASUREMENTS = {"resonator_sweep": ResonatorSweep}
+MEASUREMENTS = {"resonator_sweep": ResonatorSweep, "two_tone": TwoTone}
 
 
 class RunRequest(BaseModel):
@@ -31,7 +32,8 @@ def create_app(board, data_dir: Path, profiles_dir: Path) -> FastAPI:
 
     @app.get("/api/measurements")
     def measurements():
-        return {key: {"name": m.name, "params": m.Params.model_json_schema()}
+        return {key: {"name": m.name, "params": m.Params.model_json_schema(), "x_axis": m.x_axis,
+                      "marker_sets": m.marker_sets}
                 for key, m in MEASUREMENTS.items()}
 
     @app.get("/api/profiles")

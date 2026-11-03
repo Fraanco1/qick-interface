@@ -2,7 +2,6 @@
 // One page for the whole instrument. The server owns all measurement logic;
 // this file renders forms from parameter schemas and plots live updates.
 
-const MEASUREMENT = "resonator_sweep";
 const $ = (id) => document.getElementById(id);
 
 // ---- per-browser conveniences (may be unavailable, e.g. private windows) ----
@@ -21,7 +20,9 @@ const clientId = store.get("client", null) || (() => {
 })();
 
 const state = {
-  schema: null,          // parameter JSON schema of the measurement
+  measurements: {},      // key -> {name, params (JSON schema), x_axis, marker_sets}
+  measurement: store.get("measurement", "resonator_sweep"),
+  get schema() { return this.measurements[this.measurement].params; },
   profiles: {},          // chip name -> setup profile
   parameters: {},        // chip parameters of the selected chip
   controller: null, controllerName: null, running: false, tone: null,
@@ -106,28 +107,38 @@ function renderMenuBody() {
   else if (state.menu === "Setup") body.replaceChildren(...setupMenu("Setup"));
   else if (state.menu === "I/Q cal") body.replaceChildren(...setupMenu("I/Q cal"));
   else {
-    const saved = store.get("params", {});
     const fields = Object.entries(state.schema.properties).filter(([, p]) => p.group === state.menu);
-    body.replaceChildren(...fields.map(([key, p]) => paramField(key, p, saved[key])));
+    body.replaceChildren(...fields.map(([key, p]) => paramField(key, p)));
   }
   applyControl();
 }
 
-function paramField(key, p, savedValue) {
+// Values typed by the user, per measurement and chip.
+const paramsKey = (measurement = state.measurement) => `params.${measurement}.${$("chip").value}`;
+
+// What a field holds: what the user typed, else the chip parameter it starts from, else its default.
+function paramValue(key, p, saved = store.get(paramsKey(), {})) {
+  if (saved[key] !== undefined) return { value: saved[key], fromChip: false };
+  const chipValue = p.from_chip ? state.parameters[p.from_chip] : undefined;
+  if (chipValue !== undefined) return { value: chipValue, fromChip: true };
+  return { value: p.default, fromChip: false };
+}
+
+function paramField(key, p) {
   const input = document.createElement("input");
   input.name = key; input.type = "number"; input.inputMode = "decimal";
   input.step = p.type === "integer" ? "1" : "any";
   if (p.minimum !== undefined) input.min = p.minimum;
   if (p.maximum !== undefined) input.max = p.maximum;
-  input.value = savedValue ?? p.default ?? "";
+  const { value, fromChip } = paramValue(key, p);
+  input.value = typeof value === "number" ? +value.toFixed(6) : value ?? "";
   input.dataset.param = "1";
   input.onchange = () => {
-    const params = store.get("params", {});
+    const params = store.get(paramsKey(), {});
     params[key] = input.value === "" ? undefined : Number(input.value);
-    store.set("params", params);
-    input.removeAttribute("aria-invalid");
+    store.set(paramsKey(), params);
   };
-  return field(p.title, input, p.unit);
+  return field(p.title, input, p.unit, fromChip ? "From the chip parameters." : undefined);
 }
 
 function field(title, control, unit, hint) {
@@ -149,18 +160,22 @@ function button(text, onclick, extraClass = "") {
 }
 
 function markerMenu() {
-  const keep = button("Marker → Readout frequency", () => {
-    if (state.marker === null) return message("Place the marker on the resonance first.", true);
-    saveParameters({ readout_freq_mhz: state.data.x[state.marker] });
-  });
-  keep.dataset.control = "1";
-  return [
+  const nodes = [
     button("Marker → Min", () => setMarker(argMin(state.data?.traces["|S21| (dB)"]))),
     button("Marker → Max", () => setMarker(argMax(state.data?.traces["|S21| (dB)"]))),
     button("Marker off", () => setMarker(null)),
-    keep,
-    hint("Click on a trace to place the marker. Readout frequency is stored in the chip parameters."),
   ];
+  const target = state.measurements[state.data?.measurement ?? state.measurement]?.marker_sets;
+  if (target) {
+    const label = PARAMETER_LABELS[target]?.[0] ?? target;
+    const keep = button(`Marker → ${label}`, () => {
+      if (state.marker === null) return message("Place the marker first.", true);
+      saveParameters({ [target]: state.data.x[state.marker] });
+    });
+    keep.dataset.control = "1";
+    nodes.push(keep, hint(`Click on a trace to place the marker. ${label} is stored in the chip parameters.`));
+  }
+  return nodes;
 }
 
 const PARAMETER_LABELS = {
@@ -190,6 +205,12 @@ async function loadParameters() {
 async function saveParameters(changes) {
   try {
     state.parameters = await api("PATCH", `/api/parameters/${encodeURIComponent($("chip").value)}`, changes);
+    // a new chip parameter replaces what was typed into the fields that start from it
+    for (const [key, m] of Object.entries(state.measurements)) {
+      const saved = store.get(paramsKey(key), {});
+      for (const [name, p] of Object.entries(m.params.properties)) if (p.from_chip in changes) delete saved[name];
+      store.set(paramsKey(key), saved);
+    }
     message("Saved to the chip parameters.");
   } catch (e) { message(e.message, true); }
 }
@@ -337,11 +358,10 @@ function applyControl() {
 }
 
 function collectParams() {
-  const saved = store.get("params", {});
-  const params = {};
+  const saved = store.get(paramsKey(), {}), params = {};
   for (const [key, p] of Object.entries(state.schema.properties)) {
-    const v = saved[key] ?? p.default;
-    if (v !== undefined && v !== null && v !== "") params[key] = Number(v);
+    const { value } = paramValue(key, p, saved);
+    if (value !== undefined && value !== null && value !== "") params[key] = Number(value);
   }
   return params;
 }
@@ -349,7 +369,7 @@ function collectParams() {
 async function run() {
   try {
     message("");
-    await api("POST", "/api/runs", { measurement: MEASUREMENT, chip: $("chip").value, params: collectParams() });
+    await api("POST", "/api/runs", { measurement: state.measurement, chip: $("chip").value, params: collectParams() });
   } catch (e) { message(e.message, true); }
 }
 
@@ -420,6 +440,7 @@ function showUpdate(u) {
   plots.mag.setData([u.x, u.traces["|S21| (dB)"]]);
   plots.phase.setData([u.x, u.traces["Phase (°)"]]);
   renderMarkerReadout();
+  $("st-meas").textContent = state.measurements[u.measurement]?.name ?? "";
   $("st-start").textContent = `Start ${formatFreq(u.x[0])}`;
   $("st-stop").textContent = `Stop ${formatFreq(u.x[u.x.length - 1])}`;
   $("st-points").textContent = `${u.x.length} points`;
@@ -453,7 +474,7 @@ function connect() {
     } else if (m.type === "update") {
       showUpdate(m);
     } else if (m.type === "parameters") {
-      if (m.chip === $("chip").value) { state.parameters = m.parameters; if (state.menu === "Setup") renderMenuBody(); }
+      if (m.chip === $("chip").value) { state.parameters = m.parameters; renderMenuBody(); }
     } else if (m.type === "saved") {
       message(`Saved to data/${m.file}`);
     } else if (m.type === "error") {
@@ -476,7 +497,12 @@ async function main() {
   $("run").onclick = run;
   $("stop").onclick = () => api("POST", "/api/runs/stop").catch((e) => message(e.message, true));
 
-  state.schema = (await api("GET", "/api/measurements"))[MEASUREMENT].params;
+  state.measurements = await api("GET", "/api/measurements");
+  if (!state.measurements[state.measurement]) state.measurement = "resonator_sweep";
+  const select = $("measurement");
+  select.replaceChildren(...Object.entries(state.measurements).map(([k, m]) => new Option(m.name, k)));
+  select.value = state.measurement;
+  select.onchange = () => { state.measurement = select.value; store.set("measurement", select.value); renderMenus(); };
   plots.mag = makePlot($("plot-mag"), getComputedStyle(document.documentElement).getPropertyValue("--tr1").trim());
   plots.phase = makePlot($("plot-phase"), getComputedStyle(document.documentElement).getPropertyValue("--tr2").trim());
   new ResizeObserver(() => {
