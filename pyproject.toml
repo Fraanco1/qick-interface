@@ -1,0 +1,30 @@
+[project]
+name = "qick-interface"
+version = "0.1.0"
+description = "PNA-X-style web instrument for qubit chips on an RFSoC 4x2 running QICK"
+requires-python = ">=3.10"
+dependencies = [
+    "qick==0.2.442",  # must match the board's QICK version
+    "Pyro4",
+    "psutil",         # imported by qick.pyro
+    "numpy",
+    "pydantic>=2",
+    "fastapi",
+    "uvicorn[standard]",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx"]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+qick_interface = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

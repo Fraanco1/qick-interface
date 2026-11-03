@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QICK Analyzer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="vendor/uPlot.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="titlebar">
+    <span class="brand">QICK Analyzer</span>
+    <label class="chip-pick">Chip
+      <select id="chip"></select>
+    </label>
+    <span class="spacer"></span>
+    <span id="control-status" class="control-status" role="status"></span>
+    <label class="you">Your name <input id="name" autocomplete="name" size="10"></label>
+    <button id="take-control" class="key key-strong">Take control</button>
+  </header>
+
+  <main class="instrument">
+    <section class="screen" aria-label="Measurement display">
+      <div class="window">
+        <div class="trace-line tr1" id="tr1-line">Tr1 S21 LogMag</div>
+        <div class="plot" id="plot-mag"></div>
+        <div class="marker-readout" id="marker-readout" hidden></div>
+        <div class="empty" id="empty">Choose a chip, set the sweep and press Run sweep.</div>
+      </div>
+      <div class="window">
+        <div class="trace-line tr2" id="tr2-line">Tr2 S21 Phase</div>
+        <div class="plot" id="plot-phase"></div>
+      </div>
+    </section>
+
+    <aside class="softkeys" aria-label="Soft keys">
+      <nav class="menus" id="menus" role="tablist"></nav>
+      <form class="menu-body" id="menu-body" novalidate></form>
+      <div class="run-keys">
+        <button id="run" class="key key-run" type="button">Run sweep</button>
+        <button id="stop" class="key key-stop" type="button" disabled>Stop</button>
+      </div>
+    </aside>
+
+    <footer class="statusbar" id="statusbar">
+      <span id="st-start"></span>
+      <span id="st-stop"></span>
+      <span id="st-points"></span>
+      <span id="st-round"></span>
+      <span id="st-state" class="led">Hold</span>
+      <span id="st-message" class="message" role="alert"></span>
+    </footer>
+  </main>
+
+  <script src="vendor/uPlot.iife.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
