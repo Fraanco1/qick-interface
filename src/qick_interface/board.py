@@ -20,6 +20,13 @@ class FakeBoard:
         self.soccfg = soccfg
         self._simulate = simulate
         self._round_time_s = round_time_s
+        self.playing = None  # program left playing by play(), for tests
+
+    def play(self, program) -> None:
+        self.playing = program
+
+    def silence(self) -> None:
+        self.playing = None
 
     def run(self, program, rounds: int, should_stop: Callable[[], bool] = lambda: False
             ) -> Iterator[list[np.ndarray]]:
@@ -62,6 +69,14 @@ class QickBoard:
             raise
         finally:
             self._quietly(self._soc.reset_gens)  # silence any output left playing
+
+    def play(self, program) -> None:
+        """Run a program once and leave its periodic pulses playing."""
+        self._soc.reset_gens()
+        program.run_rounds(self._soc, progress=False)
+
+    def silence(self) -> None:
+        self._soc.reset_gens()
 
     def _abort(self):
         self._quietly(self._soc.stop_tproc)

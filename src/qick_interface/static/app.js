@@ -23,7 +23,7 @@ const clientId = store.get("client", null) || (() => {
 const state = {
   schema: null,          // parameter JSON schema of the measurement
   profiles: {},          // chip name -> setup profile
-  controller: null, controllerName: null, running: false,
+  controller: null, controllerName: null, running: false, tone: null,
   menu: store.get("menu", "Sweep"),
   data: null,            // last update {x, traces}
   marker: null,          // index into x
@@ -82,7 +82,8 @@ function menuNames() {
   for (const p of Object.values(state.schema.properties)) {
     if (p.group && !groups.includes(p.group)) groups.push(p.group);
   }
-  return [...groups, "Marker", "Setup"];
+  const iq = state.profiles[$("chip").value]?.output_path === "iq";
+  return [...groups, "Marker", "Setup", ...(iq ? ["I/Q cal"] : [])];
 }
 
 function renderMenus() {
@@ -101,7 +102,8 @@ function renderMenus() {
 function renderMenuBody() {
   const body = $("menu-body");
   if (state.menu === "Marker") body.replaceChildren(...markerMenu());
-  else if (state.menu === "Setup") body.replaceChildren(...setupMenu());
+  else if (state.menu === "Setup") body.replaceChildren(...setupMenu("Setup"));
+  else if (state.menu === "I/Q cal") body.replaceChildren(...setupMenu("I/Q cal"));
   else {
     const saved = store.get("params", {});
     const fields = Object.entries(state.schema.properties).filter(([, p]) => p.group === state.menu);
@@ -160,7 +162,7 @@ function hint(text) {
 }
 
 // ---- setup profiles ------------------------------------------------------
-// [key, title, kind, unit, hint, shown only for this output path]
+// [key, title, kind, unit, hint, shown only for this output path, or in the "I/Q cal" menu]
 const PROFILE_FIELDS = [
   ["chip", "Chip name", "text"],
   ["chip_type", "Chip type", ["transmon", "fluxonium"]],
@@ -170,15 +172,16 @@ const PROFILE_FIELDS = [
   ["readout_dac", "Readout output", ["DAC_A", "DAC_B"], null, null, "real"],
   ["i_dac", "I output", ["DAC_A", "DAC_B"], null, null, "iq"],
   ["q_dac", "Q output", ["DAC_A", "DAC_B"], null, null, "iq"],
-  ["iq_phase_deg", "Q phase offset", "number", "°", "90 for an ideal mixer; tune with a spectrum analyzer.", "iq"],
-  ["iq_gain_ratio", "Q / I gain", "number", null, "1 for an ideal mixer.", "iq"],
+  ["iq_phase_deg", "Q phase offset", "number", "°", "90 for an ideal mixer.", "I/Q cal"],
+  ["iq_gain_ratio", "Q / I gain", "number", null, "1 for an ideal mixer.", "I/Q cal"],
   ["readout_adc", "Readout input", ["ADC_B", "ADC_C", "ADC_D"]],
 ];
 
 const NEW_PROFILE = { chip: "", chip_type: "transmon", lo_mhz: null, sideband: "upper", output_path: "real",
   readout_dac: "DAC_B", i_dac: "DAC_A", q_dac: "DAC_B", iq_phase_deg: 90, iq_gain_ratio: 1, readout_adc: "ADC_D" };
 
-function setupMenu() {
+// The Setup and I/Q cal menus edit the same profile; each shows its own fields and saves all of them.
+function setupMenu(menu) {
   const current = { ...NEW_PROFILE, ...(state.profiles[$("chip").value] || {}) };
   const controls = {}, rows = {};
   const nodes = PROFILE_FIELDS.map(([key, title, kind, unit, help, onlyFor]) => {
@@ -197,11 +200,17 @@ function setupMenu() {
     rows[key].dataset.onlyFor = onlyFor || "";
     return rows[key];
   });
-  const showPathFields = () => {
-    for (const row of Object.values(rows)) row.hidden = !!row.dataset.onlyFor && row.dataset.onlyFor !== controls.output_path.value;
+  const showFields = () => {
+    for (const row of Object.values(rows)) {
+      const only = row.dataset.onlyFor;
+      row.hidden = menu === "I/Q cal" ? only !== "I/Q cal" : only === "I/Q cal" || (!!only && only !== controls.output_path.value);
+    }
   };
-  controls.output_path.onchange = showPathFields;
-  showPathFields();
+  controls.output_path.onchange = showFields;
+  showFields();
+  controls.iq_phase_deg.step = "0.1";
+  controls.iq_gain_ratio.step = "0.005";
+  const extra = menu === "I/Q cal" ? [calibrationTone(controls)] : [];
 
   const save = button("Save setup", async () => {
     const profile = Object.fromEntries(Object.entries(controls).map(([k, c]) => [k, c.value]));
@@ -215,7 +224,42 @@ function setupMenu() {
     } catch (e) { message(e.message, true); }
   }, "key-strong");
   save.dataset.control = "1";
-  return [...nodes, save, hint("Each chip keeps its own wiring. Change the chip name to save a new one.")];
+  const help = menu === "I/Q cal"
+    ? "Play a tone, watch the image on a spectrum analyzer, adjust until it is smallest, then save."
+    : "Each chip keeps its own wiring. Change the chip name to save a new one.";
+  return [...nodes, ...extra, save, hint(help)];
+}
+
+// A continuous tone on the I/Q pair. While it plays, phase and gain edits apply at once,
+// so the image can be nulled on a spectrum analyzer before saving the setup.
+function calibrationTone(controls) {
+  const box = document.createElement("fieldset");
+  box.className = "tone";
+  const legend = document.createElement("legend"); legend.textContent = "Calibration tone";
+  const rf = document.createElement("input"); rf.type = "number"; rf.step = "any"; rf.inputMode = "decimal";
+  rf.value = store.get("toneRf", ""); rf.dataset.control = "1";
+  const gain = document.createElement("input"); gain.type = "number"; gain.step = "0.05"; gain.min = 0; gain.max = 1;
+  gain.value = store.get("toneGain", 0.3); gain.dataset.control = "1";
+
+  const send = async () => {
+    store.set("toneRf", rf.value); store.set("toneGain", gain.value);
+    try {
+      await api("POST", "/api/tone", { chip: controls.chip.value, rf_mhz: Number(rf.value), gain: Number(gain.value),
+        iq_phase_deg: Number(controls.iq_phase_deg.value), iq_gain_ratio: Number(controls.iq_gain_ratio.value) });
+      message("Tone playing. Adjust the Q phase offset and Q / I gain until the image is smallest.");
+    } catch (e) { message(e.message, true); }
+  };
+  const on = button("Tone on", send); on.dataset.control = "1";
+  const off = button("Tone off", () => api("POST", "/api/tone/off").catch((e) => message(e.message, true)));
+  off.dataset.control = "1";
+  const keys = document.createElement("div"); keys.className = "run-keys"; keys.append(on, off);
+
+  let pending;
+  const live = () => { if (state.tone) { clearTimeout(pending); pending = setTimeout(send, 120); } };
+  for (const c of [controls.iq_phase_deg, controls.iq_gain_ratio, rf, gain]) c.addEventListener("input", live);
+
+  box.append(legend, field("Frequency", rf, "MHz"), field("Tone gain", gain), keys);
+  return box;
 }
 
 async function loadProfiles(select) {
@@ -225,8 +269,8 @@ async function loadProfiles(select) {
   $("chip").replaceChildren(...(chips.length ? chips.map((c) => new Option(c, c)) : [new Option("No chips yet", "")]));
   if (chips.includes(chosen)) $("chip").value = chosen;
   store.set("chip", $("chip").value);
-  if (!chips.length && state.menu !== "Setup") { state.menu = "Setup"; renderMenus(); }
-  else renderMenuBody();
+  if (!chips.length) state.menu = "Setup";
+  renderMenus();
 }
 
 // ---- control ------------------------------------------------------------
@@ -244,8 +288,8 @@ function applyControl() {
   $("run").disabled = !mine || state.running || !$("chip").value;
   $("stop").disabled = !mine || !state.running;
   const led = $("st-state");
-  led.textContent = state.running ? "Measuring" : "Hold";
-  led.classList.toggle("on", state.running);
+  led.textContent = state.running ? "Measuring" : state.tone ? `Tone ${formatFreq(state.tone.rf_mhz)}` : "Hold";
+  led.classList.toggle("on", state.running || !!state.tone);
 }
 
 function collectParams() {
@@ -360,7 +404,7 @@ function connect() {
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
     if (m.type === "state") {
-      Object.assign(state, { controller: m.controller, controllerName: m.controller_name, running: m.running });
+      Object.assign(state, { controller: m.controller, controllerName: m.controller_name, running: m.running, tone: m.tone });
       applyControl();
     } else if (m.type === "update") {
       showUpdate(m);
@@ -378,7 +422,7 @@ function connect() {
 async function main() {
   $("name").value = store.get("name", "");
   $("name").onchange = () => store.set("name", $("name").value.trim());
-  $("chip").onchange = () => { store.set("chip", $("chip").value); renderMenuBody(); applyControl(); };
+  $("chip").onchange = () => { store.set("chip", $("chip").value); renderMenus(); };
   $("take-control").onclick = async () => {
     if (!$("name").value.trim()) { $("name").focus(); message("Type your name first, so others know who controls the board.", true); return; }
     try { await api("POST", "/api/control"); } catch (e) { message(e.message, true); }
@@ -394,8 +438,7 @@ async function main() {
     traceLines();
   }).observe($("plot-mag").parentElement.parentElement);
 
-  renderMenus();
-  await loadProfiles();
+  await loadProfiles();  // draws the menus, which depend on the chip's output path
   applyControl();
   connect();
 }

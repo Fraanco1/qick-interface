@@ -7,6 +7,7 @@ from qick.asm_v2 import AsmV2, AveragerProgramV2, QickSweep1D
 
 from ..board import gen_channel, readout_channel
 from ..frequency import plan_sweep, rf_from_if
+from ..iq import iq_output
 from ..profiles import SetupProfile
 from .base import Update
 
@@ -71,7 +72,7 @@ class ResonatorSweep:
             "trigger_delay": params.trigger_delay_us,
         }
         if profile.output_path == "iq":
-            cfg.update(_iq_output(board.soccfg, profile, params.gain))
+            cfg.update(iq_output(board.soccfg, profile, params.gain))
         program = _Program(board.soccfg, reps=params.averages, final_delay=params.final_delay_us, cfg=cfg)
         if_mhz = cls.if_axis(program)
         rf = rf_from_if(profile, if_mhz)
@@ -84,16 +85,6 @@ class ResonatorSweep:
                 "|S21| (dB)": mag_db,
                 "Phase (°)": np.degrees(_remove_electrical_delay(if_mhz, s21)),
             }, raw={"s21": s21, "if_mhz": if_mhz})
-
-
-def _iq_output(soccfg, profile: SetupProfile, gain: float) -> dict:
-    """Gens, gains and Q phase for the I/Q output path. The larger of I and Q gets `gain`;
-    the sign of the Q phase picks the sideband."""
-    i_gain = gain / max(1.0, profile.iq_gain_ratio)
-    sign = 1 if profile.sideband == "upper" else -1
-    return {"gen": gen_channel(soccfg, profile.i_dac), "gain": i_gain,
-            "q_gen": gen_channel(soccfg, profile.q_dac), "q_gain": i_gain * profile.iq_gain_ratio,
-            "q_phase": sign * profile.iq_phase_deg}
 
 
 def _remove_electrical_delay(if_mhz, s21):

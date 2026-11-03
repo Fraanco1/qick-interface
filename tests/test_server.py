@@ -144,3 +144,27 @@ def test_points_without_signal_reach_viewers_as_gaps(tmp_path):
             update = next(m for m in messages_until_idle(viewer) if m["type"] == "update")
 
     assert update["traces"]["|S21| (dB)"][0] is None
+
+
+IQ_SETUP = {"chip": "Transmon A", "chip_type": "transmon", "lo_mhz": 6800.0, "output_path": "iq",
+            "i_dac": "DAC_A", "q_dac": "DAC_B"}
+
+
+def test_controller_plays_an_iq_calibration_tone_and_turns_it_off(tmp_path):
+    board = FakeBoard(SOCCFG, flat_response)
+    app = create_app(board, data_dir=tmp_path / "data", profiles_dir=tmp_path / "profiles")
+    with TestClient(app) as client:
+        client.post("/api/control", headers=as_client("alice"))
+        client.put("/api/profiles/Transmon A", json=IQ_SETUP, headers=as_client("alice"))
+        tone = {"chip": "Transmon A", "rf_mhz": 7000.0, "gain": 0.3, "iq_phase_deg": 94.0, "iq_gain_ratio": 0.95}
+
+        assert client.post("/api/tone", json=tone, headers=as_client("bob")).status_code == 403
+        assert client.post("/api/tone", json=tone, headers=as_client("alice")).json()["tone"]["rf_mhz"] == 7000.0
+
+        played = board.playing
+        assert played.get_pulse_param("tone_i", "freq") == pytest.approx(200.0, abs=0.001)
+        assert played.get_pulse_param("tone_q", "phase") - played.get_pulse_param("tone_i", "phase") == pytest.approx(94.0)
+        assert played.get_pulse_param("tone_q", "gain") == pytest.approx(0.3 * 0.95, abs=1e-4)
+
+        assert client.post("/api/tone/off", headers=as_client("alice")).json()["tone"] is None
+        assert board.playing is None

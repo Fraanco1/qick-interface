@@ -32,6 +32,7 @@ class Session:
         self._stop = threading.Event()
         self.controller: str | None = None
         self.controller_name: str | None = None
+        self.tone: dict | None = None  # calibration tone currently playing
         self.last_update: dict | None = None
 
     # --- listeners ---------------------------------------------------------
@@ -54,7 +55,7 @@ class Session:
 
     def state(self) -> dict:
         return {"type": "state", "controller": self.controller, "controller_name": self.controller_name,
-                "running": self.running}
+                "running": self.running, "tone": self.tone}
 
     @property
     def running(self) -> bool:
@@ -77,10 +78,31 @@ class Session:
         with self._start_lock:  # two quick clicks must not start two runs
             if self.running:
                 raise Busy("A run is already in progress.")
+            self._silence()
             self._stop.clear()
             self._worker = threading.Thread(target=self._run, args=(measurement, m, profile, parsed),
                                             daemon=True)
             self._worker.start()
+
+    def play_tone(self, client_id: str, program, settings: dict) -> None:
+        """Leave a calibration tone playing until tone_off() or the next run."""
+        self._check_controller(client_id)
+        with self._start_lock:
+            if self.running:
+                raise Busy("Stop the run before playing a calibration tone.")
+            self._board.play(program)
+            self.tone = settings
+        self._broadcast(self.state())
+
+    def tone_off(self, client_id: str) -> None:
+        self._check_controller(client_id)
+        self._silence()
+        self._broadcast(self.state())
+
+    def _silence(self) -> None:
+        if self.tone is not None:
+            self._board.silence()
+            self.tone = None
 
     def stop(self, client_id: str) -> None:
         """Ask the run to end after the current round."""
