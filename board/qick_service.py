@@ -16,6 +16,9 @@ HOST = "192.168.3.1"  # board address on the USB link to the lab PC
 NS_PORT = 8888
 PROXY_NAME = "rfsoc"
 
+# start_nameserver makes Pyro4 in this process accept only pickle, so talk to it in pickle too
+Pyro4.config.SERIALIZER = "pickle"
+Pyro4.config.PICKLE_PROTOCOL_VERSION = 4
 ns = threading.Thread(target=start_nameserver, args=(HOST, NS_PORT), daemon=True)
 ns.start()
 for _ in range(30):  # the USB link address may appear a little after boot
