@@ -36,10 +36,16 @@ class TonesMixin:
         for out in cfg["outputs"]:
             self.declare_gen(ch=out.gen, nqz=1)
 
-    def add_tone(self, cfg, name, freq, length, gain, **pulse_args):
+    def add_tone(self, cfg, name, freq, gain, **pulse_args):
+        """A constant pulse by default; pass style="arb" and envelope= for a shaped one."""
+        pulse_args.setdefault("style", "const")
         for out in cfg["outputs"]:
-            self.add_pulse(ch=out.gen, name=name + out.suffix, ro_ch=cfg["ro"], style="const", freq=freq,
-                           length=length, phase=out.phase_deg, gain=gain * out.gain_factor, **pulse_args)
+            self.add_pulse(ch=out.gen, name=name + out.suffix, ro_ch=cfg["ro"], freq=freq,
+                           phase=out.phase_deg, gain=gain * out.gain_factor, **pulse_args)
+
+    def add_gauss_envelope(self, cfg, name, sigma, length):
+        for out in cfg["outputs"]:
+            self.add_gauss(ch=out.gen, name=name, sigma=sigma, length=length, even_length=True)
 
     def play_tone(self, cfg, name, t=0):
         for out in cfg["outputs"]:

@@ -8,6 +8,7 @@ dependencies = [
     "Pyro4",
     "psutil",         # imported by qick.pyro
     "numpy",
+    "scipy",          # curve fitting (Rabi)
     "pydantic>=2",
     "fastapi",
     "uvicorn[standard]",

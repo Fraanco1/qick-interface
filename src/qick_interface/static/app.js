@@ -27,7 +27,9 @@ const state = {
   parameters: {},        // chip parameters of the selected chip
   controller: null, controllerName: null, running: false, tone: null,
   menu: store.get("menu", "Sweep"),
-  data: null,            // last update {x, traces}
+  data: null,            // last update {measurement, x, traces, x_axis, info}
+  xAxis: null,           // {title, unit} of what is on screen
+  plotsFor: null,        // measurement whose plot layout is on screen
   marker: null,          // index into x
 };
 
@@ -56,10 +58,19 @@ function formatFreq(mhz) {
   return mhz.toFixed(3) + " MHz";
 }
 
-// Tick label for a frequency axis: GHz/MHz with just enough decimals for one division.
-function freqTick(v, div) {
-  const ghz = Math.abs(v) >= 1000, val = ghz ? v / 1000 : v, d = ghz ? div / 1000 : div;
-  return val.toFixed(Math.max(0, Math.ceil(-Math.log10(d) + 0.001)));
+// Tick label for the x axis: frequencies in GHz/MHz, anything else as a plain number,
+// with just enough decimals for one division.
+function xTick(v, div) {
+  const ghz = xUnit() === "MHz" && Math.abs(v) >= 1000, val = ghz ? v / 1000 : v, d = ghz ? div / 1000 : div;
+  return minus(val.toFixed(Math.max(0, Math.ceil(-Math.log10(d) + 0.001))));
+}
+
+const xUnit = () => state.xAxis?.unit ?? "MHz";
+
+// A value on the x axis with its unit, e.g. "7.012 500 GHz" or "0.412 µs".
+function formatX(v) {
+  if (xUnit() === "MHz") return formatFreq(v);
+  return `${minus(String(+v.toPrecision(4)))}${xUnit() ? " " + xUnit() : ""}`;
 }
 
 const minus = (text) => text.replace(/^-/, "\u2212");
@@ -125,20 +136,27 @@ function paramValue(key, p, saved = store.get(paramsKey(), {})) {
 }
 
 function paramField(key, p) {
-  const input = document.createElement("input");
-  input.name = key; input.type = "number"; input.inputMode = "decimal";
-  input.step = p.type === "integer" ? "1" : "any";
-  if (p.minimum !== undefined) input.min = p.minimum;
-  if (p.maximum !== undefined) input.max = p.maximum;
+  let input;
+  if (p.enum) {
+    input = document.createElement("select");
+    input.append(...p.enum.map((v) => new Option(v[0].toUpperCase() + v.slice(1), v)));
+  } else {
+    input = document.createElement("input");
+    input.type = "number"; input.inputMode = "decimal";
+    input.step = p.type === "integer" ? "1" : "any";
+    if (p.minimum !== undefined) input.min = p.minimum;
+    if (p.maximum !== undefined) input.max = p.maximum;
+  }
+  input.name = key;
   const { value, fromChip } = paramValue(key, p);
   input.value = typeof value === "number" ? +value.toFixed(6) : value ?? "";
   input.dataset.param = "1";
   input.onchange = () => {
     const params = store.get(paramsKey(), {});
-    params[key] = input.value === "" ? undefined : Number(input.value);
+    params[key] = input.value === "" ? undefined : p.enum ? input.value : Number(input.value);
     store.set(paramsKey(), params);
   };
-  return field(p.title, input, p.unit, fromChip ? "From the chip parameters." : undefined);
+  return field(p.title, input, p.unit, fromChip ? "From the chip parameters." : p.description);
 }
 
 function field(title, control, unit, hint) {
@@ -160,11 +178,19 @@ function button(text, onclick, extraClass = "") {
 }
 
 function markerMenu() {
+  const main = () => state.data?.traces[plotDefs()[0].traces[0]];
   const nodes = [
-    button("Marker → Min", () => setMarker(argMin(state.data?.traces["|S21| (dB)"]))),
-    button("Marker → Max", () => setMarker(argMax(state.data?.traces["|S21| (dB)"]))),
+    button("Marker → Min", () => setMarker(argMin(main()))),
+    button("Marker → Max", () => setMarker(argMax(main()))),
     button("Marker off", () => setMarker(null)),
   ];
+  for (const [name, value] of Object.entries(state.data?.info ?? {})) {
+    const target = state.measurements[state.data.measurement]?.info_sets?.[name];
+    if (!target) continue;
+    const keep = button(`Store ${name} (${+value.toPrecision(4)})`, () => saveParameters({ [target]: value }));
+    keep.dataset.control = "1";
+    nodes.push(keep);
+  }
   const target = state.measurements[state.data?.measurement ?? state.measurement]?.marker_sets;
   if (target) {
     const label = PARAMETER_LABELS[target]?.[0] ?? target;
@@ -361,7 +387,7 @@ function collectParams() {
   const saved = store.get(paramsKey(), {}), params = {};
   for (const [key, p] of Object.entries(state.schema.properties)) {
     const { value } = paramValue(key, p, saved);
-    if (value !== undefined && value !== null && value !== "") params[key] = Number(value);
+    if (value !== undefined && value !== null && value !== "") params[key] = p.enum ? value : Number(value);
   }
   return params;
 }
@@ -376,7 +402,28 @@ async function run() {
 // ---- plots ----------------------------------------------------------------
 const plots = {};
 
-function makePlot(el, color, unit) {
+const COLORS = () => {
+  const css = getComputedStyle(document.documentElement);
+  return [css.getPropertyValue("--tr1").trim(), css.getPropertyValue("--tr2").trim()];
+};
+
+function plotDefs(measurement = state.data?.measurement ?? state.measurement) {
+  return state.measurements[measurement].plots;
+}
+
+// Rebuild both plot windows for a measurement's layout (trace count and names differ).
+function buildPlots(measurement) {
+  if (state.plotsFor === measurement) return;
+  state.plotsFor = measurement;
+  plotDefs(measurement).forEach((def, k) => {
+    const el = $(k === 0 ? "plot-mag" : "plot-phase");
+    plots[k]?.destroy();
+    plots[k] = makePlot(el, COLORS()[k], def.traces.length);
+  });
+  plots.mag = plots[0]; plots.phase = plots[1];
+}
+
+function makePlot(el, color, nTraces) {
   const axis = { stroke: "#9aa1aa", grid: { stroke: "#3b4148", width: 1, dash: [2, 3] },
                  ticks: { show: false }, font: "12px " + getComputedStyle(document.body).fontFamily };
   const tenDivisions = (u, i, min, max) => Array.from({ length: 11 }, (_, k) => min + (k * (max - min)) / 10);
@@ -388,15 +435,16 @@ function makePlot(el, color, unit) {
     axes: [
       { ...axis, splits: tenDivisions, size: 30, values: (u, vals) => {
           const every = u.width < 500 ? 5 : 2, div = (vals[10] - vals[0]) / 10;
-          return vals.map((v, k) => (k % every ? "" : freqTick(v, div)));
+          return vals.map((v, k) => (k % every ? "" : xTick(v, div)));
         } },
       { ...axis, splits: tenDivisions, size: 56,
         values: (u, vals) => vals.map((v) => minus(v.toFixed(decimalsFor((vals[10] - vals[0]) / 10)))) },
     ],
-    series: [{}, { stroke: color, width: 1.5, points: { show: false } }],
+    series: [{}, { stroke: color, width: 1.5, points: { show: false } },
+             ...(nTraces > 1 ? [{ stroke: "#ffffff", width: 1, dash: [6, 4], points: { show: false } }] : [])],
     hooks: { draw: [(u) => drawMarker(u, color)], setScale: [() => traceLines()], ready: [(u) => u.over.addEventListener("click", () => setMarker(u.cursor.idx))] },
   };
-  return new uPlot(opts, [[], []], el);
+  return new uPlot(opts, [[], ...Array.from({ length: nTraces }, () => [])], el);
 }
 
 function drawMarker(u, color) {
@@ -424,37 +472,52 @@ function renderMarkerReadout() {
   const i = state.marker, t = state.data.traces;
   box.hidden = false;
   box.innerHTML = "";
-  box.append(`Mkr 1  ${formatFreq(state.data.x[i])}`, document.createElement("br"));
+  box.append(`Mkr 1  ${formatX(state.data.x[i])}`, document.createElement("br"));
   const num = (txt) => { const s = document.createElement("span"); s.className = "num"; s.textContent = txt; return s; };
-  const fmt = (v, digits) => (v === null ? "—" : minus(v.toFixed(digits)));
-  box.append(num(`${fmt(t["|S21| (dB)"][i], 2)} dB`), "   ", num(`${fmt(t["Phase (°)"][i], 2)}°`));
+  const fmt = (v, digits) => (v === null || v === undefined ? "—" : minus(v.toFixed(digits)));
+  plotDefs().forEach((def, k) => {
+    if (k) box.append("   ");
+    box.append(num(`${fmt(t[def.traces[0]][i], 2)}${def.unit === "°" ? "°" : " " + def.unit}`));
+  });
 }
 
 const argMin = (a) => (a && a.length ? a.reduce((best, v, i) => (v < a[best] ? i : best), 0) : null);
 const argMax = (a) => (a && a.length ? a.reduce((best, v, i) => (v > a[best] ? i : best), 0) : null);
 
 function showUpdate(u) {
-  if (state.marker !== null && state.marker >= u.x.length) state.marker = null;
+  const newLayout = state.plotsFor !== u.measurement;
+  if (newLayout || (state.marker !== null && state.marker >= u.x.length)) state.marker = null;
+  const hadInfo = JSON.stringify(state.data?.info ?? {}) !== JSON.stringify(u.info ?? {});
   state.data = u;
+  state.xAxis = u.x_axis;
+  buildPlots(u.measurement);
   $("empty").hidden = true;
-  plots.mag.setData([u.x, u.traces["|S21| (dB)"]]);
-  plots.phase.setData([u.x, u.traces["Phase (°)"]]);
+  plotDefs().forEach((def, k) => plots[k].setData([u.x, ...def.traces.map((name) => u.traces[name])]));
   renderMarkerReadout();
+  renderInfo();
+  if (state.menu === "Marker" && hadInfo) renderMenuBody();
   $("st-meas").textContent = state.measurements[u.measurement]?.name ?? "";
-  $("st-start").textContent = `Start ${formatFreq(u.x[0])}`;
-  $("st-stop").textContent = `Stop ${formatFreq(u.x[u.x.length - 1])}`;
+  $("st-start").textContent = `Start ${formatX(u.x[0])}`;
+  $("st-stop").textContent = `Stop ${formatX(u.x[u.x.length - 1])}`;
   $("st-points").textContent = `${u.x.length} points`;
   $("st-round").textContent = `Round ${u.round} of ${u.rounds}`;
 }
 
 function traceLines() {
-  if (!state.data) return;
-  for (const [key, line, label, unit] of [["mag", "tr1-line", "Tr1 S21 LogMag", "dB"], ["phase", "tr2-line", "Tr2 S21 Phase", "°"]]) {
-    const s = plots[key]?.scales.y;
-    if (s.min === undefined || s.min === null) continue;
+  plotDefs().forEach((def, k) => {
+    const line = $(k === 0 ? "tr1-line" : "tr2-line"), label = `Tr${k + 1} ${def.title}`;
+    const s = plots[k]?.scales.y;
+    if (!state.data || s?.min === undefined || s.min === null) { line.textContent = label; return; }
     const div = (s.max - s.min) / 10;
-    $(line).textContent = `${label}   ${+div.toPrecision(3)} ${unit}/div   Ref ${minus(s.min.toFixed(decimalsFor(div)))} ${unit}`;
-  }
+    line.textContent = `${label}   ${+div.toPrecision(3)} ${def.unit}/div   Ref ${minus(s.min.toFixed(decimalsFor(div)))} ${def.unit}`;
+  });
+}
+
+// Fit results (e.g. the π-pulse gain) under the marker readout.
+function renderInfo() {
+  const box = $("fit-readout"), info = Object.entries(state.data?.info ?? {});
+  box.hidden = !info.length;
+  box.textContent = info.map(([name, v]) => `${name}  ${+v.toPrecision(4)}`).join("\n");
 }
 
 function message(text, isError = false) {
@@ -502,11 +565,15 @@ async function main() {
   const select = $("measurement");
   select.replaceChildren(...Object.entries(state.measurements).map(([k, m]) => new Option(m.name, k)));
   select.value = state.measurement;
-  select.onchange = () => { state.measurement = select.value; store.set("measurement", select.value); renderMenus(); };
-  plots.mag = makePlot($("plot-mag"), getComputedStyle(document.documentElement).getPropertyValue("--tr1").trim());
-  plots.phase = makePlot($("plot-phase"), getComputedStyle(document.documentElement).getPropertyValue("--tr2").trim());
+  select.onchange = () => {
+    state.measurement = select.value; store.set("measurement", select.value);
+    if (!state.data) { buildPlots(state.measurement); traceLines(); }
+    renderMenus();
+  };
+  buildPlots(state.measurement);
+  traceLines();
   new ResizeObserver(() => {
-    for (const [k, el] of [["mag", "plot-mag"], ["phase", "plot-phase"]]) plots[k].setSize({ width: $(el).clientWidth, height: $(el).clientHeight });
+    for (const [k, el] of [[0, "plot-mag"], [1, "plot-phase"]]) plots[k].setSize({ width: $(el).clientWidth, height: $(el).clientHeight });
     traceLines();
   }).observe($("plot-mag").parentElement.parentElement);
 

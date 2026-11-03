@@ -10,10 +10,14 @@ qick-interface/
 ├── src/qick_interface/
 │   ├── board.py                # Board: the only code that talks to QICK
 │   ├── frequency.py            # RF ↔ IF planning, image frequencies, limits
-│   ├── profiles.py             # setup profiles, one JSON file per chip
+│   ├── profiles.py             # setup profiles and chip parameters, JSON per chip
+│   ├── iq.py                   # tones on one DAC or an I/Q pair (shared by all programs)
+│   ├── calibration.py          # continuous I/Q calibration tone
 │   ├── measurements/
-│   │   ├── base.py             # what a measurement declares
-│   │   └── resonator_sweep.py
+│   │   ├── base.py             # what a measurement produces (Update)
+│   │   ├── resonator_sweep.py
+│   │   ├── two_tone.py
+│   │   └── rabi.py             # amplitude or length, damped-cosine fit
 │   ├── session.py              # controller/viewers, one worker, live updates
 │   ├── storage.py              # saves runs as .npz + .json
 │   ├── server.py               # FastAPI: REST + WebSocket + static page
@@ -39,17 +43,24 @@ Only one worker thread may use a Board: `QickSoc` has no locking and the Pyro4 s
 
 Pure functions, no hardware. Given a setup profile and an RF range, returns the IF values, Nyquist zone, the generator/readout frequency grid (common step ≈ 20.6 Hz on the 4x2), image frequencies, and readable errors for impossible requests (e.g. IF above the ADC's first Nyquist zone, 2.21 GHz). This is where wiring mistakes are caught, so it carries the most tests.
 
-### Setup profiles (`profiles.py`)
+### Setup profiles and chip parameters (`profiles.py`)
 
-One JSON file per chip in `profiles/`: chip name and type, output path (real / I/Q), return path (real / I/Q), DAC and ADC ports, control line port (fluxonium), LO frequency and sideband, flux bias (manual value). The LO is a plain field until a real LO driver exists; the driver will be added here, not before.
+One JSON file per chip in `profiles/`: chip name and type, LO frequency and sideband, output path (real / I/Q) with its DACs and I/Q calibration, readout ADC. The LO is a plain field until a real LO driver exists; the driver will be added here, not before. Not yet built: return path I/Q, fluxonium control line, flux bias.
+
+Chip parameters (readout and qubit frequency and gain, π-pulse gain and σ) live in `profiles/parameters/<chip>.json`, are filled from measurement results, and pre-fill measurement forms.
+
+### Tones (`iq.py`)
+
+Every program plays its tones through `TonesMixin`: on the real output path a tone is one pulse on one DAC; on the I/Q path it is the same pulse on the I and Q DACs with the profile's calibrated phase offset and gain ratio, both frequency-matched to the readout so they stay phase-locked.
 
 ### Measurements (`measurements/`)
 
 Each measurement is one Python class that declares:
 
-- parameters as a pydantic model with units and limits (FastAPI exposes its JSON schema; the page builds the form from it),
-- its traces (e.g. `|S21| (dB)`, `phase (°)`),
-- `run(board, profile, params)`, which yields updates.
+- parameters as a pydantic model with units, limits, soft-key group, and the chip parameter a field starts from (FastAPI exposes its JSON schema; the page builds the form from it),
+- its x axis and plots (which traces share a plot, with units),
+- the chip parameter its marker can be stored as, and which fit results can be stored (`marker_sets`, `info_sets`),
+- `run(board, profile, params, should_stop)`, which yields `Update`s (x, traces, raw data to save, fit results).
 
 Adding a measurement never requires web code. The resonator sweep compiles one tProc program that sweeps generator and readout frequency together (dynamic readout, frequency-matched with `ro_ch`/`gen_ch`) and removes the fitted electrical delay from the phase.
 

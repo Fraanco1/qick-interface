@@ -46,6 +46,9 @@ class ResonatorSweep:
     Params = ResonatorSweepParams
     x_axis = {"title": "Frequency", "unit": "MHz"}
     marker_sets = "readout_freq_mhz"  # chip parameter the marker can be stored as
+    plots = [{"title": "S21 LogMag", "unit": "dB", "traces": ["|S21| (dB)"]},
+             {"title": "S21 Phase", "unit": "°", "traces": ["Phase (°)"]}]
+    info_sets = {}
 
     @staticmethod
     def if_axis(program) -> np.ndarray:

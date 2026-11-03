@@ -12,8 +12,14 @@ FIXTURE = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "soccfg_r
 
 
 def simulated_chip(program):
-    """For --fake: a resonator dip, or a qubit dip in two-tone, in the middle of the sweep, plus noise."""
-    if "qubit" in program.pulses:
+    """For --fake: a resonator dip, a qubit dip in two-tone, or Rabi oscillations, plus noise."""
+    if "sweep" in program.cfg:  # Rabi: pi pulse at gain 0.35, or 0.1 µs, decaying over 1 µs
+        from .measurements.rabi import Rabi
+        f = Rabi.x_values(program)
+        x_pi, decay = (0.35, 5.0) if program.cfg["sweep"] == "amplitude" else (0.1, 1.0)
+        excited = 0.5 - 0.5 * np.cos(np.pi * f / x_pi) * np.exp(-f / decay)
+        s21 = (700 + 120 * excited) * np.exp(1j * (0.6 + 0.3 * excited))
+    elif "qubit" in program.pulses:
         from .measurements.two_tone import TwoTone
         f = TwoTone.qubit_if_axis(program)
         f0, width = (f[0] + f[-1]) / 2, max(abs(f[-1] - f[0]) / 60, 0.01)

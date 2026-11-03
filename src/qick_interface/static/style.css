@@ -89,6 +89,11 @@ button, input, select { font: inherit; color: inherit; }
   line-height: 1.4; pointer-events: none;
 }
 .marker-readout .num { color: var(--tr1); }
+.fit-readout {
+  position: absolute; top: 22px; left: 70px; white-space: pre;
+  background: rgba(0, 0, 0, 0.75); border: 1px dashed #ffffff;
+  padding: 4px 8px; font-size: 13px; color: #ffffff; pointer-events: none;
+}
 
 /* ---- soft keys ---------------------------------------------------- */
 .softkeys {

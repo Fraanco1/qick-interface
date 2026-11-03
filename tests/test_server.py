@@ -189,3 +189,10 @@ def test_each_measurement_says_which_chip_parameter_its_marker_sets(client):
     assert measurements["two_tone"]["marker_sets"] == "qubit_freq_mhz"
     readout = measurements["two_tone"]["params"]["properties"]["readout_freq_mhz"]
     assert readout["from_chip"] == "readout_freq_mhz"
+
+
+def test_rabi_declares_its_plots_and_the_fit_result_it_can_store(client):
+    rabi = client.get("/api/measurements").json()["rabi"]
+
+    assert rabi["plots"][0]["traces"] == ["Signal", "Fit"]
+    assert rabi["info_sets"] == {"π-pulse gain": "pi_gain"}

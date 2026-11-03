@@ -116,7 +116,8 @@ class Session:
             for u in m.run(self._board, profile, params, self._stop.is_set):
                 self.last_update = {"type": "update", "measurement": key, "chip": profile.chip,
                                     "round": u.round, "rounds": u.rounds, "x": _json_array(u.x),
-                                    "traces": {k: _json_array(v) for k, v in u.traces.items()}}
+                                    "traces": {k: _json_array(v) for k, v in u.traces.items()},
+                                    "x_axis": u.x_axis or m.x_axis, "info": u.info}
                 self.broadcast(self.last_update)
         except Exception as e:
             self.broadcast({"type": "error", "message": str(e)})

@@ -57,6 +57,9 @@ class TwoTone:
     Params = TwoToneParams
     x_axis = {"title": "Qubit frequency", "unit": "MHz"}
     marker_sets = "qubit_freq_mhz"  # chip parameter the marker can be stored as
+    plots = [{"title": "S21 LogMag", "unit": "dB", "traces": ["|S21| (dB)"]},
+             {"title": "S21 Phase", "unit": "°", "traces": ["Phase (°)"]}]
+    info_sets = {}
 
     @staticmethod
     def qubit_if_axis(program) -> np.ndarray:
