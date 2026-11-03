@@ -4,25 +4,29 @@
 Installed as a systemd service by board/install.sh. Must run as root inside the
 PYNQ environment (`source /etc/profile`).
 """
-import subprocess
+import sys
+import threading
 import time
 
-from qick.pyro import start_server
+import Pyro4
+from qick.pyro import start_nameserver, start_server
 
 BITFILE = "/home/xilinx/jupyter_notebooks/qick_firmware/qick_4x2.bit"
 HOST = "192.168.3.1"  # board address on the USB link to the lab PC
 NS_PORT = 8888
 PROXY_NAME = "rfsoc"
 
-ns = subprocess.Popen(
-    ["pyro4-ns", "-n", HOST, "-p", str(NS_PORT)],
-    env={"PATH": "/usr/local/share/pynq-venv/bin:/usr/bin:/bin",
-         "PYRO_SERIALIZERS_ACCEPTED": "pickle",
-         "PYRO_PICKLE_PROTOCOL_VERSION": "4"},
-)
-time.sleep(5)  # let the nameserver come up
+ns = threading.Thread(target=start_nameserver, args=(HOST, NS_PORT), daemon=True)
+ns.start()
+for _ in range(30):  # the USB link address may appear a little after boot
+    if not ns.is_alive():
+        sys.exit(f"Pyro4 nameserver could not start on {HOST}:{NS_PORT}; is the USB link up?")
+    try:
+        Pyro4.locateNS(host=HOST, port=NS_PORT)
+        break
+    except Pyro4.errors.NamingError:
+        time.sleep(1)
+else:
+    sys.exit(f"Pyro4 nameserver did not answer on {HOST}:{NS_PORT} within 30 s.")
 
-try:
-    start_server(ns_host=HOST, ns_port=NS_PORT, proxy_name=PROXY_NAME, bitfile=BITFILE)
-finally:
-    ns.terminate()
+start_server(ns_host=HOST, ns_port=NS_PORT, proxy_name=PROXY_NAME, bitfile=BITFILE)

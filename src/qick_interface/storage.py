@@ -16,10 +16,14 @@ def save_run(data_dir: Path, measurement: str, profile, params, update: Update,
     now = datetime.now()
     chip = re.sub(r"[^\w.-]+", "_", profile.chip)
     rel = Path(now.strftime("%Y-%m-%d")) / f"{now:%H%M%S}_{measurement}_{chip}"
+    n = 2
+    while (data_dir / f"{rel}.json").exists():  # two runs in the same second
+        rel = rel.with_name(f"{now:%H%M%S}_{measurement}_{chip}_{n}")
+        n += 1
     (data_dir / rel).parent.mkdir(parents=True, exist_ok=True)
 
-    np.savez(data_dir / rel.with_suffix(".npz"), x=update.x, **update.traces, **update.raw)
-    (data_dir / rel.with_suffix(".json")).write_text(json.dumps({
+    np.savez(data_dir / f"{rel}.npz", x=update.x, **update.traces, **update.raw)
+    (data_dir / f"{rel}.json").write_text(json.dumps({
         "measurement": measurement,
         "saved_at": now.isoformat(timespec="seconds"),
         "completed": completed,

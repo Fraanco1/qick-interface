@@ -69,8 +69,10 @@ class ResonatorSweep:
 
         for i, iq in enumerate(board.run(program, params.rounds, should_stop), start=1):
             s21 = iq[0]
+            with np.errstate(divide="ignore"):  # no signal gives -inf dB, shown as a gap
+                mag_db = 20 * np.log10(np.abs(s21))
             yield Update(i, params.rounds, rf, {
-                "|S21| (dB)": 20 * np.log10(np.abs(s21)),
+                "|S21| (dB)": mag_db,
                 "Phase (°)": np.degrees(_remove_electrical_delay(if_mhz, s21)),
             }, raw={"s21": s21, "if_mhz": if_mhz})
 

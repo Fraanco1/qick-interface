@@ -64,6 +64,13 @@ const minus = (text) => text.replace(/^-/, "\u2212");
 
 function decimalsFor(div) { return Math.max(0, -Math.floor(Math.log10(div) + 1e-9)); }
 
+// 10 divisions with a round step, starting on a division and always containing [min, max].
+function tenDivisionRange(min, max) {
+  let d = niceDiv((max - min) || 1), lo = Math.floor(min / d) * d;
+  while (lo + 10 * d < max) { d = niceDiv(d * 10.1); lo = Math.floor(min / d) * d; }
+  return [lo, lo + 10 * d];
+}
+
 function niceDiv(range) {
   const raw = range / 10, p = 10 ** Math.floor(Math.log10(raw));
   return [1, 2, 5, 10].map((m) => m * p).find((v) => v >= raw);
@@ -93,11 +100,13 @@ function renderMenus() {
 
 function renderMenuBody() {
   const body = $("menu-body");
-  if (state.menu === "Marker") return body.replaceChildren(...markerMenu());
-  if (state.menu === "Setup") return body.replaceChildren(...setupMenu());
-  const saved = store.get("params", {});
-  const fields = Object.entries(state.schema.properties).filter(([, p]) => p.group === state.menu);
-  body.replaceChildren(...fields.map(([key, p]) => paramField(key, p, saved[key])));
+  if (state.menu === "Marker") body.replaceChildren(...markerMenu());
+  else if (state.menu === "Setup") body.replaceChildren(...setupMenu());
+  else {
+    const saved = store.get("params", {});
+    const fields = Object.entries(state.schema.properties).filter(([, p]) => p.group === state.menu);
+    body.replaceChildren(...fields.map(([key, p]) => paramField(key, p, saved[key])));
+  }
   applyControl();
 }
 
@@ -249,7 +258,7 @@ function makePlot(el, color, unit) {
     width: el.clientWidth, height: el.clientHeight,
     legend: { show: false },
     cursor: { sync: { key: "screen" }, points: { show: false }, drag: { x: false, y: false } },
-    scales: { x: { time: false }, y: { range: (u, min, max) => { const d = niceDiv((max - min) || 1); return [Math.floor(min / d) * d, Math.floor(min / d) * d + 10 * d]; } } },
+    scales: { x: { time: false }, y: { range: (u, min, max) => tenDivisionRange(min, max) } },
     axes: [
       { ...axis, splits: tenDivisions, size: 30, values: (u, vals) => {
           const every = u.width < 500 ? 5 : 2, div = (vals[10] - vals[0]) / 10;
@@ -298,6 +307,7 @@ const argMin = (a) => (a && a.length ? a.reduce((best, v, i) => (v < a[best] ? i
 const argMax = (a) => (a && a.length ? a.reduce((best, v, i) => (v > a[best] ? i : best), 0) : null);
 
 function showUpdate(u) {
+  if (state.marker !== null && state.marker >= u.x.length) state.marker = null;
   state.data = u;
   $("empty").hidden = true;
   plots.mag.setData([u.x, u.traces["|S21| (dB)"]]);

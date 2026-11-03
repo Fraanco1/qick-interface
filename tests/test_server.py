@@ -37,7 +37,8 @@ LOOPBACK = {"chip": "Loopback", "chip_type": "transmon", "lo_mhz": None,
 
 
 def test_saved_setup_profiles_are_listed_back(client, tmp_path):
-    assert client.put("/api/profiles/Loopback", json=LOOPBACK).status_code == 200
+    client.post("/api/control", headers=as_client("alice"))
+    assert client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice")).status_code == 200
 
     profiles = client.get("/api/profiles").json()
 
@@ -54,8 +55,8 @@ def as_client(client_id):
 
 
 def test_only_the_controller_can_start_a_run(client):
-    client.put("/api/profiles/Loopback", json=LOOPBACK)
     client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
 
     assert client.post("/api/runs", json=SWEEP, headers=as_client("bob")).status_code == 403
 
@@ -75,8 +76,8 @@ def messages_until_idle(ws, already_running=False):
 
 
 def test_viewers_see_each_round_and_the_run_is_saved(client, tmp_path):
-    client.put("/api/profiles/Loopback", json=LOOPBACK)
     client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
 
     with client.websocket_connect("/ws") as viewer:
         assert viewer.receive_json()["type"] == "state"
@@ -94,8 +95,8 @@ def test_stopping_a_run_saves_what_was_measured_as_incomplete(tmp_path):
     slow = FakeBoard(SOCCFG, flat_response, round_time_s=0.05)
     app = create_app(slow, data_dir=tmp_path / "data", profiles_dir=tmp_path / "profiles")
     with TestClient(app) as client:
-        client.put("/api/profiles/Loopback", json=LOOPBACK)
         client.post("/api/control", headers=as_client("alice"))
+        client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
         long_sweep = {**SWEEP, "params": {**SWEEP["params"], "rounds": 100}}
 
         with client.websocket_connect("/ws") as viewer:
@@ -112,11 +113,34 @@ def test_stopping_a_run_saves_what_was_measured_as_incomplete(tmp_path):
 
 
 def test_invalid_parameters_are_rejected_with_a_reason(client):
-    client.put("/api/profiles/Loopback", json=LOOPBACK)
     client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
     bad = {**SWEEP, "params": {**SWEEP["params"], "points": 1}}
 
     response = client.post("/api/runs", json=bad, headers=as_client("alice"))
 
     assert response.status_code == 422
     assert "points" in response.text
+
+
+def test_only_the_controller_can_change_a_setup_profile(client):
+    client.post("/api/control", headers=as_client("alice"))
+
+    assert client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("bob")).status_code == 403
+    assert client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice")).status_code == 200
+
+
+def test_points_without_signal_reach_viewers_as_gaps(tmp_path):
+    def dead_input(program):
+        return [0 * ResonatorSweep.if_axis(program) + 0j]
+
+    app = create_app(FakeBoard(SOCCFG, dead_input), data_dir=tmp_path / "data", profiles_dir=tmp_path / "profiles")
+    with TestClient(app) as client:
+        client.post("/api/control", headers=as_client("alice"))
+        client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
+        with client.websocket_connect("/ws") as viewer:
+            viewer.receive_json()
+            client.post("/api/runs", json=SWEEP, headers=as_client("alice"))
+            update = next(m for m in messages_until_idle(viewer) if m["type"] == "update")
+
+    assert update["traces"]["|S21| (dB)"][0] is None

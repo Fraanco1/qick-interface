@@ -37,7 +37,9 @@ def create_app(board, data_dir: Path, profiles_dir: Path) -> FastAPI:
         return load_profiles(profiles_dir)
 
     @app.put("/api/profiles/{chip}")
-    def put_profile(chip: str, profile: SetupProfile):
+    def put_profile(chip: str, profile: SetupProfile, x_client_id: str = Header()):
+        if x_client_id != session.controller:
+            raise HTTPException(403, "Only the controller can change a setup. Take control first.")
         if chip != profile.chip:
             raise HTTPException(400, "The chip name in the URL and in the profile differ.")
         try:

@@ -61,11 +61,16 @@ class QickBoard:
             self._abort()
             raise
         finally:
-            self._soc.reset_gens()  # silence any output left playing
+            self._quietly(self._soc.reset_gens)  # silence any output left playing
 
     def _abort(self):
+        self._quietly(self._soc.stop_tproc)
+
+    @staticmethod
+    def _quietly(call):
+        """Cleanup calls must not hide the error that caused them."""
         try:
-            self._soc.stop_tproc()
+            call()
         except Exception:
             pass
 

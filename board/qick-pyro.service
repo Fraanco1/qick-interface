@@ -1,13 +1,18 @@
 [Unit]
 Description=QICK Pyro4 server for qick-interface
-After=network.target
+Wants=network-online.target
+After=network-online.target
+# a permanent failure (missing bitfile, version mismatch) stops after 5 tries
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=idle
-Restart=always
+Restart=on-failure
 RestartSec=10
 User=root
-ExecStart=/bin/bash -c 'source /etc/profile && python /home/xilinx/qick-interface-board/qick_service.py'
+# install.sh replaces @DIR@ with the folder holding qick_service.py
+ExecStart=/bin/bash -c 'source /etc/profile && python @DIR@/qick_service.py'
 
 [Install]
 WantedBy=multi-user.target

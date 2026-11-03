@@ -7,6 +7,8 @@ import threading
 from collections.abc import Callable
 from pathlib import Path
 
+import numpy as np
+
 from .storage import save_run
 
 
@@ -24,6 +26,7 @@ class Session:
         self._data_dir = data_dir
         self._measurements = measurements
         self._lock = threading.Lock()
+        self._start_lock = threading.Lock()
         self._listeners: list[Callable[[dict], None]] = []
         self._worker: threading.Thread | None = None
         self._stop = threading.Event()
@@ -44,7 +47,10 @@ class Session:
         with self._lock:
             listeners = list(self._listeners)
         for listener in listeners:
-            listener(message)
+            try:
+                listener(message)
+            except Exception:
+                pass  # a closed connection must not stop the run for everyone
 
     def state(self) -> dict:
         return {"type": "state", "controller": self.controller, "controller_name": self.controller_name,
@@ -66,14 +72,15 @@ class Session:
     # --- runs --------------------------------------------------------------
     def start(self, client_id: str, measurement: str, profile, params: dict) -> None:
         self._check_controller(client_id)
-        if self.running:
-            raise Busy("A run is already in progress.")
         m = self._measurements[measurement]
         parsed = m.Params(**params)
-        self._stop.clear()
-        self._worker = threading.Thread(target=self._run, args=(measurement, m, profile, parsed),
-                                        daemon=True)
-        self._worker.start()
+        with self._start_lock:  # two quick clicks must not start two runs
+            if self.running:
+                raise Busy("A run is already in progress.")
+            self._stop.clear()
+            self._worker = threading.Thread(target=self._run, args=(measurement, m, profile, parsed),
+                                            daemon=True)
+            self._worker.start()
 
     def stop(self, client_id: str) -> None:
         """Ask the run to end after the current round."""
@@ -86,8 +93,8 @@ class Session:
         try:
             for u in m.run(self._board, profile, params, self._stop.is_set):
                 self.last_update = {"type": "update", "measurement": key, "chip": profile.chip,
-                                    "round": u.round, "rounds": u.rounds, "x": u.x.tolist(),
-                                    "traces": {k: v.tolist() for k, v in u.traces.items()}}
+                                    "round": u.round, "rounds": u.rounds, "x": _json_array(u.x),
+                                    "traces": {k: _json_array(v) for k, v in u.traces.items()}}
                 self._broadcast(self.last_update)
         except Exception as e:
             self._broadcast({"type": "error", "message": str(e)})
@@ -104,8 +111,8 @@ class Session:
         except Exception as e:
             self._broadcast({"type": "error", "message": f"Could not save the run: {e}"})
 
-    def wait(self, timeout: float | None = None) -> None:
-        """Block until the current run ends (used by tests and shutdown)."""
-        worker = self._worker
-        if worker is not None:
-            worker.join(timeout)
+
+def _json_array(a) -> list:
+    """Array as a JSON list; NaN and ±inf become null, which the page draws as a gap."""
+    a = np.asarray(a, dtype=float)
+    return np.where(np.isfinite(a), a, None).tolist()

@@ -37,3 +37,8 @@ def test_rf_on_the_wrong_side_of_lo_is_rejected():
 def test_if_above_the_adc_first_nyquist_zone_is_rejected():
     with pytest.raises(FrequencyError, match="2211.84 MHz"):
         plan_sweep(profile(None), rf_start=2000.0, rf_stop=2500.0)
+
+
+def test_zero_or_negative_frequencies_are_rejected_without_lo():
+    with pytest.raises(FrequencyError, match="above 0"):
+        plan_sweep(profile(None), rf_start=0.0, rf_stop=100.0)

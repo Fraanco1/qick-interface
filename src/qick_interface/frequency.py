@@ -24,6 +24,8 @@ def plan_sweep(profile: SetupProfile, rf_start: float, rf_stop: float) -> SweepP
     sign = 1 if profile.sideband == "upper" else -1
     if lo is None:
         if_start, if_stop = rf_start, rf_stop
+        if min(if_start, if_stop) <= 0:
+            raise FrequencyError(f"Without an LO, RF must be above 0 MHz; requested {rf_start:g}–{rf_stop:g} MHz.")
     else:
         if_start, if_stop = sign * (rf_start - lo), sign * (rf_stop - lo)
         if min(if_start, if_stop) <= 0:
