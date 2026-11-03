@@ -35,9 +35,15 @@ class _Program(AveragerProgramV2):
         self.add_loop("freq", cfg["points"], exec_before=push_ro)
         self.add_pulse(ch=gen, name="probe", ro_ch=ro, style="const", freq=cfg["freq"],
                        length=cfg["pulse_length"], phase=0, gain=cfg["gain"])
+        if "q_gen" in cfg:  # I/Q output: same tone on a second DAC, phase-locked through ro_ch
+            self.declare_gen(ch=cfg["q_gen"], nqz=1)
+            self.add_pulse(ch=cfg["q_gen"], name="probe_q", ro_ch=ro, style="const", freq=cfg["freq"],
+                           length=cfg["pulse_length"], phase=cfg["q_phase"], gain=cfg["q_gain"])
 
     def _body(self, cfg):
         self.pulse(ch=cfg["gen"], name="probe", t=0)
+        if "q_gen" in cfg:
+            self.pulse(ch=cfg["q_gen"], name="probe_q", t=0)
         self.trigger(ros=[cfg["ro"]], pins=[0], t=cfg["trigger_delay"])
 
 
@@ -54,7 +60,7 @@ class ResonatorSweep:
     def run(cls, board, profile: SetupProfile, params: ResonatorSweepParams,
             should_stop: Callable[[], bool] = lambda: False) -> Iterator[Update]:
         plan = plan_sweep(profile, params.rf_start_mhz, params.rf_stop_mhz)
-        program = _Program(board.soccfg, reps=params.averages, final_delay=params.final_delay_us, cfg={
+        cfg = {
             "gen": gen_channel(board.soccfg, profile.readout_dac),
             "ro": readout_channel(board.soccfg, profile.readout_adc),
             "freq": QickSweep1D("freq", plan.if_start, plan.if_stop),
@@ -63,7 +69,10 @@ class ResonatorSweep:
             "pulse_length": params.pulse_length_us,
             "readout_length": params.readout_length_us,
             "trigger_delay": params.trigger_delay_us,
-        })
+        }
+        if profile.output_path == "iq":
+            cfg.update(_iq_output(board.soccfg, profile, params.gain))
+        program = _Program(board.soccfg, reps=params.averages, final_delay=params.final_delay_us, cfg=cfg)
         if_mhz = cls.if_axis(program)
         rf = rf_from_if(profile, if_mhz)
 
@@ -75,6 +84,16 @@ class ResonatorSweep:
                 "|S21| (dB)": mag_db,
                 "Phase (°)": np.degrees(_remove_electrical_delay(if_mhz, s21)),
             }, raw={"s21": s21, "if_mhz": if_mhz})
+
+
+def _iq_output(soccfg, profile: SetupProfile, gain: float) -> dict:
+    """Gens, gains and Q phase for the I/Q output path. The larger of I and Q gets `gain`;
+    the sign of the Q phase picks the sideband."""
+    i_gain = gain / max(1.0, profile.iq_gain_ratio)
+    sign = 1 if profile.sideband == "upper" else -1
+    return {"gen": gen_channel(soccfg, profile.i_dac), "gain": i_gain,
+            "q_gen": gen_channel(soccfg, profile.q_dac), "q_gain": i_gain * profile.iq_gain_ratio,
+            "q_phase": sign * profile.iq_phase_deg}
 
 
 def _remove_electrical_delay(if_mhz, s21):

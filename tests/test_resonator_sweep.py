@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 from qick import QickConfig
 
 from qick_interface.board import FakeBoard
@@ -54,3 +55,24 @@ def test_run_stops_after_the_current_round_when_asked():
         updates.append(update)
 
     assert len(updates) == 2
+
+
+def test_iq_output_plays_i_and_q_on_two_dacs_with_the_calibrated_offset():
+    iq_profile = SetupProfile(chip="Transmon A", chip_type="transmon", lo_mhz=6800.0,
+                              output_path="iq", i_dac="DAC_A", q_dac="DAC_B",
+                              iq_phase_deg=93.0, iq_gain_ratio=0.9)
+    programs = []
+
+    def capture(program):
+        programs.append(program)
+        return [np.ones(ResonatorSweep.if_axis(program).size, complex)]
+
+    params = ResonatorSweepParams(rf_start_mhz=6900.0, rf_stop_mhz=7100.0, points=101, gain=0.5, rounds=1)
+    list(ResonatorSweep.run(FakeBoard(SOCCFG, capture), iq_profile, params))
+
+    p = programs[0]
+    assert p.pulses["probe"].gen_chs == [1]    # DAC_A
+    assert p.pulses["probe_q"].gen_chs == [0]  # DAC_B
+    assert p.get_pulse_param("probe", "gain") == pytest.approx(0.5, abs=1e-4)
+    assert p.get_pulse_param("probe_q", "gain") == pytest.approx(0.45, abs=1e-4)
+    assert p.get_pulse_param("probe_q", "phase") - p.get_pulse_param("probe", "phase") == pytest.approx(93.0, abs=0.01)

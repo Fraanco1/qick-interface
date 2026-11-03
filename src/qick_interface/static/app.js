@@ -160,24 +160,32 @@ function hint(text) {
 }
 
 // ---- setup profiles ------------------------------------------------------
+// [key, title, kind, unit, hint, shown only for this output path]
 const PROFILE_FIELDS = [
   ["chip", "Chip name", "text"],
   ["chip_type", "Chip type", ["transmon", "fluxonium"]],
   ["lo_mhz", "LO frequency", "number", "MHz", "Leave empty when there is no mixer (RF = IF)."],
   ["sideband", "Sideband", ["upper", "lower"], null, "Upper: RF = LO + IF. Lower: RF = LO − IF."],
-  ["readout_dac", "Readout output", ["DAC_A", "DAC_B"]],
+  ["output_path", "Output path", ["real", "iq"], null, "I/Q: the tone goes out on two DACs into an I/Q mixer."],
+  ["readout_dac", "Readout output", ["DAC_A", "DAC_B"], null, null, "real"],
+  ["i_dac", "I output", ["DAC_A", "DAC_B"], null, null, "iq"],
+  ["q_dac", "Q output", ["DAC_A", "DAC_B"], null, null, "iq"],
+  ["iq_phase_deg", "Q phase offset", "number", "°", "90 for an ideal mixer; tune with a spectrum analyzer.", "iq"],
+  ["iq_gain_ratio", "Q / I gain", "number", null, "1 for an ideal mixer.", "iq"],
   ["readout_adc", "Readout input", ["ADC_B", "ADC_C", "ADC_D"]],
 ];
 
+const NEW_PROFILE = { chip: "", chip_type: "transmon", lo_mhz: null, sideband: "upper", output_path: "real",
+  readout_dac: "DAC_B", i_dac: "DAC_A", q_dac: "DAC_B", iq_phase_deg: 90, iq_gain_ratio: 1, readout_adc: "ADC_D" };
+
 function setupMenu() {
-  const current = state.profiles[$("chip").value] || { chip: "", chip_type: "transmon", lo_mhz: null,
-    sideband: "upper", readout_dac: "DAC_B", readout_adc: "ADC_D" };
-  const controls = {};
-  const nodes = PROFILE_FIELDS.map(([key, title, kind, unit, help]) => {
+  const current = { ...NEW_PROFILE, ...(state.profiles[$("chip").value] || {}) };
+  const controls = {}, rows = {};
+  const nodes = PROFILE_FIELDS.map(([key, title, kind, unit, help, onlyFor]) => {
     let c;
     if (Array.isArray(kind)) {
       c = document.createElement("select");
-      c.append(...kind.map((v) => new Option(v, v)));
+      c.append(...kind.map((v) => new Option(v === "iq" ? "I/Q" : v, v)));
     } else {
       c = document.createElement("input"); c.type = kind;
       if (kind === "number") { c.step = "any"; c.inputMode = "decimal"; }
@@ -185,11 +193,21 @@ function setupMenu() {
     c.value = current[key] ?? "";
     c.dataset.control = "1";
     controls[key] = c;
-    return field(title, c, unit, help);
+    rows[key] = field(title, c, unit, help);
+    rows[key].dataset.onlyFor = onlyFor || "";
+    return rows[key];
   });
+  const showPathFields = () => {
+    for (const row of Object.values(rows)) row.hidden = !!row.dataset.onlyFor && row.dataset.onlyFor !== controls.output_path.value;
+  };
+  controls.output_path.onchange = showPathFields;
+  showPathFields();
+
   const save = button("Save setup", async () => {
     const profile = Object.fromEntries(Object.entries(controls).map(([k, c]) => [k, c.value]));
     profile.lo_mhz = profile.lo_mhz === "" ? null : Number(profile.lo_mhz);
+    profile.iq_phase_deg = Number(profile.iq_phase_deg);
+    profile.iq_gain_ratio = Number(profile.iq_gain_ratio);
     try {
       await api("PUT", `/api/profiles/${encodeURIComponent(profile.chip)}`, profile);
       await loadProfiles(profile.chip);
@@ -300,7 +318,8 @@ function renderMarkerReadout() {
   box.innerHTML = "";
   box.append(`Mkr 1  ${formatFreq(state.data.x[i])}`, document.createElement("br"));
   const num = (txt) => { const s = document.createElement("span"); s.className = "num"; s.textContent = txt; return s; };
-  box.append(num(`${t["|S21| (dB)"][i].toFixed(2)} dB`), "   ", num(`${t["Phase (°)"][i].toFixed(2)}°`));
+  const fmt = (v, digits) => (v === null ? "—" : minus(v.toFixed(digits)));
+  box.append(num(`${fmt(t["|S21| (dB)"][i], 2)} dB`), "   ", num(`${fmt(t["Phase (°)"][i], 2)}°`));
 }
 
 const argMin = (a) => (a && a.length ? a.reduce((best, v, i) => (v < a[best] ? i : best), 0) : null);
