@@ -23,6 +23,7 @@ const clientId = store.get("client", null) || (() => {
 const state = {
   schema: null,          // parameter JSON schema of the measurement
   profiles: {},          // chip name -> setup profile
+  parameters: {},        // chip parameters of the selected chip
   controller: null, controllerName: null, running: false, tone: null,
   menu: store.get("menu", "Sweep"),
   data: null,            // last update {x, traces}
@@ -148,12 +149,49 @@ function button(text, onclick, extraClass = "") {
 }
 
 function markerMenu() {
+  const keep = button("Marker → Readout frequency", () => {
+    if (state.marker === null) return message("Place the marker on the resonance first.", true);
+    saveParameters({ readout_freq_mhz: state.data.x[state.marker] });
+  });
+  keep.dataset.control = "1";
   return [
     button("Marker → Min", () => setMarker(argMin(state.data?.traces["|S21| (dB)"]))),
     button("Marker → Max", () => setMarker(argMax(state.data?.traces["|S21| (dB)"]))),
     button("Marker off", () => setMarker(null)),
-    hint("Click on a trace to place the marker."),
+    keep,
+    hint("Click on a trace to place the marker. Readout frequency is stored in the chip parameters."),
   ];
+}
+
+const PARAMETER_LABELS = {
+  readout_freq_mhz: ["Readout frequency", formatFreq], readout_gain: ["Readout gain", String],
+  qubit_freq_mhz: ["Qubit frequency", formatFreq], qubit_gain: ["Qubit gain", String],
+  pi_gain: ["π-pulse gain", String], pi_sigma_us: ["π-pulse σ", (v) => `${v} µs`],
+};
+
+function parameterList() {
+  const box = document.createElement("dl"); box.className = "parameters";
+  const entries = Object.entries(state.parameters);
+  if (!entries.length) { box.append(hint("No chip parameters yet. They are filled from measurement results.")); }
+  for (const [key, value] of entries) {
+    const [label, fmt] = PARAMETER_LABELS[key] || [key, String];
+    const dt = document.createElement("dt"); dt.textContent = label;
+    const dd = document.createElement("dd"); dd.textContent = fmt(value);
+    box.append(dt, dd);
+  }
+  return box;
+}
+
+async function loadParameters() {
+  const chip = $("chip").value;
+  state.parameters = chip ? await api("GET", `/api/parameters/${encodeURIComponent(chip)}`).catch(() => ({})) : {};
+}
+
+async function saveParameters(changes) {
+  try {
+    state.parameters = await api("PATCH", `/api/parameters/${encodeURIComponent($("chip").value)}`, changes);
+    message("Saved to the chip parameters.");
+  } catch (e) { message(e.message, true); }
 }
 
 function hint(text) {
@@ -227,7 +265,12 @@ function setupMenu(menu) {
   const help = menu === "I/Q cal"
     ? "Play a tone, watch the image on a spectrum analyzer, adjust until it is smallest, then save."
     : "Each chip keeps its own wiring. Change the chip name to save a new one.";
-  return [...nodes, ...extra, save, hint(help)];
+  const params = [];
+  if (menu === "Setup") {
+    const title = document.createElement("h3"); title.className = "subhead"; title.textContent = "Chip parameters";
+    params.push(title, parameterList());
+  }
+  return [...nodes, ...extra, save, hint(help), ...params];
 }
 
 // A continuous tone on the I/Q pair. While it plays, phase and gain edits apply at once,
@@ -269,6 +312,7 @@ async function loadProfiles(select) {
   $("chip").replaceChildren(...(chips.length ? chips.map((c) => new Option(c, c)) : [new Option("No chips yet", "")]));
   if (chips.includes(chosen)) $("chip").value = chosen;
   store.set("chip", $("chip").value);
+  await loadParameters();
   if (!chips.length) state.menu = "Setup";
   renderMenus();
 }
@@ -408,6 +452,8 @@ function connect() {
       applyControl();
     } else if (m.type === "update") {
       showUpdate(m);
+    } else if (m.type === "parameters") {
+      if (m.chip === $("chip").value) { state.parameters = m.parameters; if (state.menu === "Setup") renderMenuBody(); }
     } else if (m.type === "saved") {
       message(`Saved to data/${m.file}`);
     } else if (m.type === "error") {
@@ -422,7 +468,7 @@ function connect() {
 async function main() {
   $("name").value = store.get("name", "");
   $("name").onchange = () => store.set("name", $("name").value.trim());
-  $("chip").onchange = () => { store.set("chip", $("chip").value); renderMenus(); };
+  $("chip").onchange = async () => { store.set("chip", $("chip").value); await loadParameters(); renderMenus(); };
   $("take-control").onclick = async () => {
     if (!$("name").value.trim()) { $("name").focus(); message("Type your name first, so others know who controls the board.", true); return; }
     try { await api("POST", "/api/control"); } catch (e) { message(e.message, true); }

@@ -11,7 +11,7 @@ from pydantic import BaseModel, ValidationError
 from .calibration import IqTone, iq_tone_program
 from .frequency import FrequencyError
 from .measurements.resonator_sweep import ResonatorSweep
-from .profiles import SetupProfile, load_profiles, save_profile
+from .profiles import ChipParameters, SetupProfile, load_parameters, load_profiles, save_profile, update_parameters
 from .session import Busy, NotController, Session
 
 STATIC = Path(__file__).parent / "static"
@@ -49,6 +49,22 @@ def create_app(board, data_dir: Path, profiles_dir: Path) -> FastAPI:
         except ValueError as e:
             raise HTTPException(400, str(e))
         return profile
+
+    @app.get("/api/parameters/{chip}")
+    def parameters(chip: str):
+        if chip not in load_profiles(profiles_dir):
+            raise HTTPException(404, f"No setup profile for chip {chip!r}.")
+        return load_parameters(profiles_dir, chip).model_dump(exclude_none=True)
+
+    @app.patch("/api/parameters/{chip}")
+    def patch_parameters(chip: str, changes: ChipParameters, x_client_id: str = Header()):
+        if x_client_id != session.controller:
+            raise HTTPException(403, "Only the controller can change chip parameters. Take control first.")
+        if chip not in load_profiles(profiles_dir):
+            raise HTTPException(404, f"No setup profile for chip {chip!r}.")
+        merged = update_parameters(profiles_dir, chip, changes).model_dump(exclude_none=True)
+        session.broadcast({"type": "parameters", "chip": chip, "parameters": merged})
+        return merged
 
     @app.post("/api/control")
     def take_control(x_client_id: str = Header(), x_client_name: str | None = Header(None)):

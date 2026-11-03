@@ -32,3 +32,28 @@ def save_profile(directory: Path, profile: SetupProfile) -> None:
         raise ValueError("Chip names may only use letters, digits, spaces, '.', '_' and '-'.")
     directory.mkdir(parents=True, exist_ok=True)
     (directory / f"{profile.chip}.json").write_text(profile.model_dump_json(indent=2))
+
+
+class ChipParameters(BaseModel):
+    """Values measured on a chip that later measurements start from (all optional)."""
+    model_config = ConfigDict(extra="forbid")
+
+    readout_freq_mhz: float | None = None
+    readout_gain: float | None = Field(None, ge=0, le=1)
+    qubit_freq_mhz: float | None = None
+    qubit_gain: float | None = Field(None, ge=0, le=1)
+    pi_gain: float | None = Field(None, ge=0, le=1)
+    pi_sigma_us: float | None = Field(None, gt=0)
+
+
+def load_parameters(directory: Path, chip: str) -> ChipParameters:
+    path = directory / "parameters" / f"{chip}.json"
+    return ChipParameters.model_validate_json(path.read_text()) if path.exists() else ChipParameters()
+
+
+def update_parameters(directory: Path, chip: str, changes: ChipParameters) -> ChipParameters:
+    """Add or overwrite the values given in `changes`; others stay as they were."""
+    merged = load_parameters(directory, chip).model_copy(update=changes.model_dump(exclude_unset=True))
+    (directory / "parameters").mkdir(parents=True, exist_ok=True)
+    (directory / "parameters" / f"{chip}.json").write_text(merged.model_dump_json(indent=2, exclude_none=True))
+    return merged

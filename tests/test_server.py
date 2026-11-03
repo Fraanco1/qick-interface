@@ -168,3 +168,15 @@ def test_controller_plays_an_iq_calibration_tone_and_turns_it_off(tmp_path):
 
         assert client.post("/api/tone/off", headers=as_client("alice")).json()["tone"] is None
         assert board.playing is None
+
+
+def test_controller_records_chip_parameters_that_viewers_can_read(client):
+    client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
+
+    assert client.patch("/api/parameters/Loopback", json={"readout_freq_mhz": 7012.5},
+                        headers=as_client("bob")).status_code == 403
+    client.patch("/api/parameters/Loopback", json={"readout_freq_mhz": 7012.5}, headers=as_client("alice"))
+    client.patch("/api/parameters/Loopback", json={"qubit_freq_mhz": 10021.0}, headers=as_client("alice"))
+
+    assert client.get("/api/parameters/Loopback").json() == {"readout_freq_mhz": 7012.5, "qubit_freq_mhz": 10021.0}

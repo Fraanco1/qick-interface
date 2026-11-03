@@ -62,6 +62,14 @@ _Avoid_: downconversion scheme, input path
 The saved wiring of one chip: its output path, return path, ports, control line and LO.
 _Avoid_: config, preset, setup
 
+**Chip parameters**:
+The values measured on one chip that later measurements start from, such as readout frequency, qubit frequency and π-pulse amplitude.
+_Avoid_: calibration (reserved for I/Q calibration), chip config, qubit params
+
+**I/Q calibration**:
+The Q phase offset and Q/I gain ratio that best suppress the image of an I/Q output path; part of the setup profile.
+_Avoid_: mixer correction, IQ balance
+
 ## Measurements
 
 **Measurement**:

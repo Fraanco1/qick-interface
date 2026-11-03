@@ -44,7 +44,7 @@ class Session:
         with self._lock:
             self._listeners.remove(listener)
 
-    def _broadcast(self, message: dict) -> None:
+    def broadcast(self, message: dict) -> None:
         with self._lock:
             listeners = list(self._listeners)
         for listener in listeners:
@@ -64,7 +64,7 @@ class Session:
     # --- control -----------------------------------------------------------
     def take_control(self, client_id: str, name: str | None = None) -> None:
         self.controller, self.controller_name = client_id, name
-        self._broadcast(self.state())
+        self.broadcast(self.state())
 
     def _check_controller(self, client_id: str) -> None:
         if client_id != self.controller:
@@ -92,12 +92,12 @@ class Session:
                 raise Busy("Stop the run before playing a calibration tone.")
             self._board.play(program)
             self.tone = settings
-        self._broadcast(self.state())
+        self.broadcast(self.state())
 
     def tone_off(self, client_id: str) -> None:
         self._check_controller(client_id)
         self._silence()
-        self._broadcast(self.state())
+        self.broadcast(self.state())
 
     def _silence(self) -> None:
         if self.tone is not None:
@@ -110,28 +110,28 @@ class Session:
         self._stop.set()
 
     def _run(self, key, m, profile, params) -> None:
-        self._broadcast({**self.state(), "running": True})
+        self.broadcast({**self.state(), "running": True})
         u = None
         try:
             for u in m.run(self._board, profile, params, self._stop.is_set):
                 self.last_update = {"type": "update", "measurement": key, "chip": profile.chip,
                                     "round": u.round, "rounds": u.rounds, "x": _json_array(u.x),
                                     "traces": {k: _json_array(v) for k, v in u.traces.items()}}
-                self._broadcast(self.last_update)
+                self.broadcast(self.last_update)
         except Exception as e:
-            self._broadcast({"type": "error", "message": str(e)})
+            self.broadcast({"type": "error", "message": str(e)})
         finally:
             if u is not None:
                 self._save(key, profile, params, u)
             self._worker = None
-            self._broadcast(self.state())
+            self.broadcast(self.state())
 
     def _save(self, key, profile, params, u) -> None:
         try:
             rel = save_run(self._data_dir, key, profile, params, u, completed=u.round == u.rounds)
-            self._broadcast({"type": "saved", "file": rel})
+            self.broadcast({"type": "saved", "file": rel})
         except Exception as e:
-            self._broadcast({"type": "error", "message": f"Could not save the run: {e}"})
+            self.broadcast({"type": "error", "message": f"Could not save the run: {e}"})
 
 
 def _json_array(a) -> list:
