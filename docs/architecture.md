@@ -35,13 +35,14 @@ The only module that touches hardware; Pyro4 never appears outside it.
 
 - Interface: `soccfg`, and `run(program, rounds, should_stop)`, which yields the running average I/Q after each round.
 - Hides: building the Pyro4 proxy without IPython, QICK version check (PC and board must match), `step_rounds` round-by-round acquisition, safe stop (`stop_tproc`, `stop_readout`, `reset_gens`), finite timeouts on every poll, board-side tracebacks.
-- Adapters: `QickBoard` (real board over Pyro4) and `FakeBoard` (simulated resonator, for tests and `--fake` mode).
+- Interface also has `play(program)` / `silence()` for the I/Q calibration tone.
+- Adapters: `QickBoard` (real board over Pyro4) and `FakeBoard` (computes a simulated response from the compiled program; used by tests and `--fake` mode).
 
 Only one worker thread may use a Board: `QickSoc` has no locking and the Pyro4 server is multithreaded.
 
 ### Frequency planning (`frequency.py`)
 
-Pure functions, no hardware. Given a setup profile and an RF range, returns the IF values, Nyquist zone, the generator/readout frequency grid (common step ≈ 20.6 Hz on the 4x2), image frequencies, and readable errors for impossible requests (e.g. IF above the ADC's first Nyquist zone, 2.21 GHz). This is where wiring mistakes are caught, so it carries the most tests.
+Pure functions, no hardware. Given a setup profile and an RF range, returns the IF range and image range, or a readable error for an impossible request (RF on the wrong side of the LO; IF above the ADC's first Nyquist zone, 2211.84 MHz, or for drive-only tones the DAC's, 4915.2 MHz). QICK then rounds frequencies to its common generator/readout grid (≈ 20.6 Hz on the 4x2); measurements read the rounded values back from the program. This is where wiring mistakes are caught.
 
 ### Setup profiles and chip parameters (`profiles.py`)
 
@@ -66,7 +67,7 @@ Adding a measurement never requires web code. The resonator sweep compiles one t
 
 ### Session (`session.py`)
 
-One worker thread owns the Board and runs one run at a time. Only the controller (identified by a per-browser token) can start or stop runs; viewers receive the same live updates. Control is taken explicitly. See ADR 0003.
+One worker thread owns the Board and runs one run at a time. Only the controller (identified by a per-browser token) can start or stop runs, play the calibration tone, or change profiles and chip parameters; viewers receive the same live updates. Control is taken explicitly. Starting a run silences the calibration tone. See ADR 0003.
 
 ### Storage (`storage.py`)
 

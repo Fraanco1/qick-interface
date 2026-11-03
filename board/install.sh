@@ -3,7 +3,8 @@
 #
 # The board has no internet, so first download the wheels on the lab PC and copy this folder over:
 #   python3 -m pip download --only-binary=:all: --python-version 3.10 --platform any -d board/wheels Pyro4
-#   scp -r board xilinx@192.168.3.1:qick-interface-board
+#   ssh xilinx@192.168.3.1 mkdir -p qick-interface-board
+#   scp -r board/* xilinx@192.168.3.1:qick-interface-board/
 #   ssh -t xilinx@192.168.3.1 'sudo ~/qick-interface-board/install.sh'
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
