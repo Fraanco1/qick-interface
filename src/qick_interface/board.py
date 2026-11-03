@@ -42,6 +42,7 @@ class QickBoard:
     """The real board, reached through the QICK Pyro4 server (board/qick_service.py)."""
 
     CALL_TIMEOUT_S = 30  # a stuck board raises instead of hanging the app
+    STALL_S = 30         # no data for this long during a round: give up with an error
 
     def __init__(self, host: str = "192.168.3.1", port: int = 8888, name: str = "rfsoc"):
         Pyro4.config.SERIALIZER = "pickle"
@@ -56,12 +57,12 @@ class QickBoard:
     def run(self, program, rounds: int, should_stop: Callable[[], bool] = lambda: False
             ) -> Iterator[list[np.ndarray]]:
         try:
-            program.acquire(self._soc, rounds=rounds, progress=False, step_rounds=True)
-            while True:
-                more = program.finish_round()
+            program.acquire(self._soc, rounds=rounds, progress=False, step_rounds=True)  # loads, prepares round 1
+            for done in range(1, rounds + 1):
+                self._acquire_round(program)
                 means = program._summarize_accumulated(program.rounds_buf)
                 yield [m[0].dot([1, 1j]) for m in means]  # first read of each shot
-                if not more or should_stop():
+                if done == rounds or should_stop():
                     return
                 program.prepare_round()
         except BaseException:  # includes GeneratorExit when the caller stops early
@@ -70,16 +71,40 @@ class QickBoard:
         finally:
             self._quietly(self._soc.reset_gens)  # silence any output left playing
 
+    def _acquire_round(self, program) -> None:
+        """One round of accumulated data: QICK's finish_round (qick_asm.py, accumulated branch), but
+        every wait on the board is finite. QICK's own loop waits forever (poll_data(timeout=None)), and
+        a board-side call left waiting takes data from later runs, which then hang in turn."""
+        total = int(np.prod(program.loop_dims))
+        reads = [ro["trigs"] for ro in program.ro_chs.values()]
+        self._soc.start_readout(total, counter_addr=program.counter_addr, ch_list=list(program.ro_chs),
+                                reads_per_shot=reads)
+        count, last_data = 0, time.monotonic()
+        while count < total:
+            for shots, (data, _stats) in self._soc.poll_data(totaltime=0.1, timeout=1.0):
+                for ch, n_reads in enumerate(reads):
+                    program.acc_buf[ch].reshape((-1, 2))[count * n_reads:(count + shots) * n_reads] = data[ch]
+                count += shots
+                last_data = time.monotonic()
+            if time.monotonic() - last_data > self.STALL_S:
+                raise RuntimeError(f"The board stopped sending data ({count} of {total} shots after "
+                                   f"{self.STALL_S} s without new data). Check the board service.")
+        self._soc.cleanup_round()
+        program.rounds_buf.append(program._process_accumulated(program.acc_buf))
+
     def play(self, program) -> None:
-        """Run a program once and leave its periodic pulses playing."""
-        self._soc.reset_gens()
-        program.run_rounds(self._soc, progress=False)
+        """Start a program without waiting for it: a pulse train keeps running, a periodic
+        tone keeps playing after the program ends. Both last until silence()."""
+        self.silence()
+        program.run(self._soc)
 
     def silence(self) -> None:
+        self._soc.stop_tproc()
         self._soc.reset_gens()
 
     def _abort(self):
         self._quietly(self._soc.stop_tproc)
+        self._quietly(self._soc.streamer.stop_readout)
 
     @staticmethod
     def _quietly(call):

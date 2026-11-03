@@ -32,7 +32,7 @@ class RabiParams(BaseModel):
     readout_freq_mhz: float = _f(group="Readout", unit="MHz", chip="readout_freq_mhz", title="Readout frequency")
     readout_gain: float = _f(0.5, group="Readout", chip="readout_gain", ge=0, le=1, title="Readout gain")
     readout_pulse_us: float = _f(2.0, group="Readout", unit="µs", gt=0, le=100, title="Readout pulse length")
-    readout_length_us: float = _f(1.5, group="Readout", unit="µs", gt=0, le=29, title="Readout window")
+    readout_length_us: float = _f(1.5, group="Readout", unit="µs", gt=0, le=100, title="Readout window")
     trigger_delay_us: float = _f(0.3, group="Readout", unit="µs", ge=0, title="Time of flight")
     averages: int = _f(500, group="Average", ge=1, title="Averages per round")
     rounds: int = _f(10, group="Average", ge=1, title="Rounds")

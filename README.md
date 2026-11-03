@@ -6,10 +6,10 @@ Anyone in the lab opens it in a browser. One person at a time controls the board
 
 It measures transmon and fluxonium chips:
 
-- **Resonator sweep:** |S21| and phase of the readout resonator, with the cable delay removed.
+- **Resonator sweep:** |S21| and phase of the readout resonator, pulsed or CW (tone always on, like a PNA-X), with the cable delay removed.
 - **Two-tone spectroscopy:** sweep a qubit tone while reading out at the resonator.
 - **Rabi:** sweep the qubit pulse amplitude or length, with a fitted π-pulse.
-- **I/Q calibration:** a continuous tone for nulling the image of an I/Q mixer on a spectrum analyzer.
+- **Output tone:** a continuous tone or pulse train (with an oscilloscope trigger) for checking the setup, and for I/Q calibration.
 
 Each chip keeps its own wiring (*setup profile*) and its own measured values (*chip parameters*), so each measurement starts from what the previous one found.
 

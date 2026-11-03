@@ -196,3 +196,32 @@ def test_rabi_declares_its_plots_and_the_fit_result_it_can_store(client):
 
     assert rabi["plots"][0]["traces"] == ["Signal", "Fit"]
     assert rabi["info_sets"] == {"π-pulse gain": "pi_gain"}
+
+
+@pytest.mark.parametrize("tone, expected_mode", [
+    ({"mode": "continuous"}, "periodic"),
+    ({"mode": "pulsed", "pulse_length_us": 2.0, "period_us": 10.0}, "oneshot"),
+])
+def test_controller_sends_a_tone_on_a_real_output_to_check_it_on_a_scope(tmp_path, tone, expected_mode):
+    board = FakeBoard(SOCCFG, flat_response)
+    app = create_app(board, data_dir=tmp_path / "data", profiles_dir=tmp_path / "profiles")
+    with TestClient(app) as client:
+        client.post("/api/control", headers=as_client("alice"))
+        client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
+
+        response = client.post("/api/tone", json={"chip": "Loopback", "rf_mhz": 500.0, "gain": 0.4, **tone},
+                               headers=as_client("alice"))
+
+        assert response.status_code == 200
+        assert board.playing.pulses["tone"].params["mode"] == expected_mode
+        assert board.playing.get_pulse_param("tone", "freq") == pytest.approx(500.0, abs=0.001)
+        if tone["mode"] == "pulsed":
+            assert board.playing.get_pulse_param("tone", "length") == pytest.approx(2.0, abs=0.01)
+
+
+def test_a_pulse_train_needs_a_period_longer_than_the_pulse(client):
+    client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
+    tone = {"chip": "Loopback", "rf_mhz": 500.0, "mode": "pulsed", "pulse_length_us": 5.0, "period_us": 4.0}
+
+    assert client.post("/api/tone", json=tone, headers=as_client("alice")).status_code == 422

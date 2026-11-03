@@ -69,10 +69,17 @@ Measurement: **Resonator sweep**.
 |---|---|
 | Sweep | Start, Stop (RF, MHz), Points |
 | Power | Gain (0–1, fraction of full DAC scale) |
-| Timing | Pulse length, Readout window, Time of flight, Repetition delay |
+| Timing | Mode (Pulsed or CW), Settling time (CW), Pulse length (pulsed), Readout window, Time of flight, Repetition delay (pulsed) |
 | Average | Averages per round, Rounds |
 
 Press **Run sweep**. The traces update after every round; **Stop** ends the run after the current round.
+
+**Pulsed or CW.**
+
+- **Pulsed** (default): each shot sends one pulse, and the readout window opens one time of flight after the pulse starts.
+- **CW** works like a PNA-X: the tone stays on and steps from frequency to frequency. At each point the app waits the **Settling time**, then measures over the readout window. Use CW for high-Q resonators, which don't reach steady state within a short pulse (loaded Q above about 10⁵ at 7 GHz). Make the settling time a few times the resonator's 1/κ: 1/κ ≈ 2.3 µs for κ/2π = 70 kHz.
+
+On the bench loopback both modes give the same |S21| and phase (amplitude ratio 1.0000, phase within 0.4°). A longer readout window averages more noise away, like a lower IF bandwidth on the PNA-X.
 
 - **Tr1:** |S21| in dB, relative to the ADC's full scale (not calibrated to dBm).
 - **Tr2:** phase in degrees, with the cable's electrical delay fitted and removed, wrapped to ±180°.
@@ -104,6 +111,20 @@ Measurement: **Rabi**. Qubit and readout frequencies are filled in from steps 1 
 **Tr1** is the readout signal along the direction it moves in the I/Q plane, with a damped-cosine fit as a dashed white line. **Tr2** is the phase.
 
 When the fit explains the data, the screen shows the π-pulse (gain, or length in µs). For an amplitude sweep, **Marker → Store π-pulse gain** saves it. If there is no clear oscillation, no π-pulse is shown, rather than a meaningless number.
+
+## Sending a tone (Output)
+
+**Output** sends a tone on the selected chip's output path, like the CW source of a PNA-X, for checking cables, mixers and levels with an oscilloscope or spectrum analyzer. It works for every chip; on the I/Q path the tone goes out on both DACs with the saved I/Q calibration.
+
+| Field | Meaning |
+|---|---|
+| Frequency | RF in MHz; the setup's LO and sideband give the board frequency. |
+| Gain | 0–1, fraction of full DAC scale. |
+| Mode | **Continuous**, or **Pulsed**: a pulse train with **Pulse length** and **Period** in µs. |
+
+In pulsed mode, digital output **PMOD0_0** gives a short trigger at the start of every pulse; connect it to the oscilloscope's trigger input.
+
+**Tone on** starts it; edits are applied immediately while it plays. The status bar shows **Tone** or **Pulses** and the frequency. **Tone off** or starting a run turns it off.
 
 ## Markers
 

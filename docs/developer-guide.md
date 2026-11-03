@@ -25,7 +25,9 @@ browser ──REST──▶ server.py ──▶ session.py ──worker thread�
                                                                       └─ board.run(program)      QickBoard | FakeBoard
 ```
 
-- **`board.py`** is the only module that touches QICK hardware. `QickBoard` talks to the board over Pyro4; `FakeBoard` takes a function that computes a simulated response from the compiled program. Both expose `soccfg`, `run(program, rounds, should_stop)` (yields the running average per readout after each round), `play(program)` and `silence()`.
+- **`board.py`** is the only module that touches QICK hardware. `QickBoard` talks to the board over Pyro4; `FakeBoard` takes a function that computes a simulated response from the compiled program. Both expose `soccfg`, `run(program, rounds, should_stop)` (yields the running average per readout after each round), `play(program)` (start without waiting, e.g. the output tone) and `silence()`.
+  - `QickBoard` runs its own round loop instead of QICK's `finish_round`: every wait on the board is finite (`poll_data(timeout=1.0)`), and a round with no new data for `STALL_S` (30 s) fails with a clear error. QICK's loop waits forever, and a board-side call left waiting steals data from later runs, so they hang too. Keep this when upgrading QICK.
+- **`tone.py`** builds the output tone (continuous, or a pulse train with a PMOD0_0 marker), also used for I/Q calibration.
 - **`frequency.py`** is pure: RF ↔ IF for a setup profile, and the ADC/DAC limits.
 - **`iq.py`** makes every program play its tones the same way: one pulse on one DAC (real path), or the same pulse on the I and Q DACs with the calibrated phase and gain (I/Q path).
 - **`measurements/`**: one class per measurement (below).
@@ -158,7 +160,7 @@ Requests that change anything carry `X-Client-Id` (a random id per browser) and 
 | `GET /api/parameters/{chip}` · `PATCH /api/parameters/{chip}` | Read, add or overwrite chip parameters (controller only) |
 | `POST /api/control` | Become the controller |
 | `POST /api/runs` · `POST /api/runs/stop` | Start a run `{measurement, chip, params}` (409 if busy, 422 if invalid); stop after the current round |
-| `POST /api/tone` · `POST /api/tone/off` | Play or stop the I/Q calibration tone `{chip, rf_mhz, gain, iq_phase_deg, iq_gain_ratio}` |
+| `POST /api/tone` · `POST /api/tone/off` | Play or stop the output tone `{chip, rf_mhz, gain, mode, pulse_length_us, period_us, iq_phase_deg?, iq_gain_ratio?}` (the last two only while tuning I/Q calibration) |
 | `WS /ws` | Live messages; on connect, the current state and the last update |
 
 WebSocket messages have a `type`:

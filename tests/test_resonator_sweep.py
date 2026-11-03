@@ -76,3 +76,17 @@ def test_iq_output_plays_i_and_q_on_two_dacs_with_the_calibrated_offset():
     assert p.get_pulse_param("probe", "gain") == pytest.approx(0.5, abs=1e-4)
     assert p.get_pulse_param("probe_q", "gain") == pytest.approx(0.45, abs=1e-4)
     assert p.get_pulse_param("probe_q", "phase") - p.get_pulse_param("probe", "phase") == pytest.approx(93.0, abs=0.01)
+
+
+def test_cw_mode_keeps_the_tone_on_and_still_finds_the_resonance():
+    programs = []
+
+    def capture(program):
+        programs.append(program)
+        return notch(if_center_mhz=150.0)(program)
+
+    updates = run(FakeBoard(SOCCFG, capture), mode="cw", settle_us=20.0)
+
+    last = updates[-1]
+    assert abs(last.x[np.argmin(last.traces["|S21| (dB)"])] - 6150.0) < 0.5
+    assert programs[0].pulses["probe"].params["mode"] == "periodic"

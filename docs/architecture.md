@@ -12,7 +12,7 @@ qick-interface/
 │   ├── frequency.py            # RF ↔ IF planning, image frequencies, limits
 │   ├── profiles.py             # setup profiles and chip parameters, JSON per chip
 │   ├── iq.py                   # tones on one DAC or an I/Q pair (shared by all programs)
-│   ├── calibration.py          # continuous I/Q calibration tone
+│   ├── tone.py                 # output tone: continuous or pulse train; also I/Q calibration
 │   ├── measurements/
 │   │   ├── base.py             # what a measurement produces (Update)
 │   │   ├── resonator_sweep.py

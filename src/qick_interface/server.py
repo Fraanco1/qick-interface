@@ -8,7 +8,7 @@ from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconne
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
-from .calibration import IqTone, iq_tone_program
+from .tone import OutputTone, tone_program
 from .frequency import FrequencyError
 from .measurements.resonator_sweep import ResonatorSweep
 from .measurements.rabi import Rabi
@@ -93,12 +93,12 @@ def create_app(board, data_dir: Path, profiles_dir: Path) -> FastAPI:
         return session.state()
 
     @app.post("/api/tone")
-    def tone_on(tone: IqTone, x_client_id: str = Header()):
+    def tone_on(tone: OutputTone, x_client_id: str = Header()):
         profile = load_profiles(profiles_dir).get(tone.chip)
         if profile is None:
             raise HTTPException(404, f"No setup profile for chip {tone.chip!r}.")
         try:
-            session.play_tone(x_client_id, iq_tone_program(board.soccfg, profile, tone), tone.model_dump())
+            session.play_tone(x_client_id, tone_program(board.soccfg, profile, tone), tone.model_dump())
         except NotController as e:
             raise HTTPException(403, str(e))
         except Busy as e:

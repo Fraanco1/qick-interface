@@ -1,5 +1,6 @@
 """Resonator sweep: |S21| and phase against readout tone frequency."""
 from collections.abc import Callable, Iterator
+from typing import Literal
 
 import numpy as np
 from pydantic import BaseModel, Field
@@ -17,15 +18,23 @@ class ResonatorSweepParams(BaseModel):
     rf_stop_mhz: float = Field(title="Stop", json_schema_extra={"unit": "MHz", "group": "Sweep"})
     points: int = Field(201, ge=2, le=10001, title="Points", json_schema_extra={"group": "Sweep"})
     gain: float = Field(0.5, ge=0, le=1, title="Gain", json_schema_extra={"group": "Power"})
-    pulse_length_us: float = Field(2.0, gt=0, le=100, title="Pulse length", json_schema_extra={"unit": "µs", "group": "Timing"})
-    readout_length_us: float = Field(1.5, gt=0, le=29, title="Readout window", json_schema_extra={"unit": "µs", "group": "Timing"})
+    mode: Literal["pulsed", "cw"] = Field("pulsed", title="Mode", json_schema_extra={"group": "Timing"},
+                                         description="CW keeps the tone on, like a PNA-X; pulsed sends one pulse per shot.")
+    settle_us: float = Field(10.0, ge=0, le=1000, title="Settling time (CW)", json_schema_extra={"unit": "µs", "group": "Timing"},
+                             description="Wait after each frequency step before measuring; a few times the resonator's 1/κ.")
+    pulse_length_us: float = Field(2.0, gt=0, le=100, title="Pulse length (pulsed)", json_schema_extra={"unit": "µs", "group": "Timing"})
+    readout_length_us: float = Field(1.5, gt=0, le=100, title="Readout window", json_schema_extra={"unit": "µs", "group": "Timing"})
     trigger_delay_us: float = Field(0.3, ge=0, title="Time of flight", json_schema_extra={"unit": "µs", "group": "Timing"})
     averages: int = Field(100, ge=1, title="Averages per round", json_schema_extra={"group": "Average"})
     rounds: int = Field(10, ge=1, title="Rounds", json_schema_extra={"group": "Average"})
-    final_delay_us: float = Field(1.0, ge=0, title="Repetition delay", json_schema_extra={"unit": "µs", "group": "Timing"})
+    final_delay_us: float = Field(1.0, ge=0, title="Repetition delay (pulsed)", json_schema_extra={"unit": "µs", "group": "Timing"})
 
 
 class _Program(TonesMixin, AveragerProgramV2):
+    """Pulsed: one pulse per shot, the window opens after the time of flight.
+    CW: each shot switches the continuously playing tone to the next frequency (it never stops),
+    waits the settling time, then measures."""
+
     def _initialize(self, cfg):
         ro = cfg["ro"]
         self.declare_outputs(cfg)
@@ -34,11 +43,17 @@ class _Program(TonesMixin, AveragerProgramV2):
         push_ro = AsmV2()
         push_ro.send_readoutconfig(ch=ro, name="ro", t=0)
         self.add_loop("freq", cfg["points"], exec_before=push_ro)
-        self.add_tone(cfg, "probe", freq=cfg["freq"], length=cfg["pulse_length"], gain=cfg["gain"])
+        if cfg["cw"]:
+            self.add_tone(cfg, "probe", freq=cfg["freq"], length=1.0, gain=cfg["gain"], mode="periodic")
+        else:
+            self.add_tone(cfg, "probe", freq=cfg["freq"], length=cfg["pulse_length"], gain=cfg["gain"])
 
     def _body(self, cfg):
         self.play_tone(cfg, "probe", t=0)
-        self.trigger(ros=[cfg["ro"]], pins=[0], t=cfg["trigger_delay"])
+        window_start = cfg["settle"] + cfg["trigger_delay"] if cfg["cw"] else cfg["trigger_delay"]
+        self.trigger(ros=[cfg["ro"]], pins=[0], t=window_start)
+        if cfg["cw"]:
+            self.delay_auto(t=0, gens=False)  # next frequency only after this window closes
 
 
 class ResonatorSweep:
@@ -66,10 +81,14 @@ class ResonatorSweep:
             "points": params.points,
             "gain": params.gain,
             "pulse_length": params.pulse_length_us,
+            "cw": params.mode == "cw",
+            "settle": params.settle_us,
             "readout_length": params.readout_length_us,
             "trigger_delay": params.trigger_delay_us,
         }
-        program = _Program(board.soccfg, reps=params.averages, final_delay=params.final_delay_us, cfg=cfg)
+        # in CW the tone never stops, so a repetition delay would only slow the sweep down
+        final_delay = 0.05 if params.mode == "cw" else params.final_delay_us
+        program = _Program(board.soccfg, reps=params.averages, final_delay=final_delay, cfg=cfg)
         if_mhz = cls.if_axis(program)
         rf = rf_from_if(profile, if_mhz)
 
