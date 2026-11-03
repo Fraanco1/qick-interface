@@ -22,8 +22,8 @@ qick-interface/
 │   ├── storage.py              # saves runs as .npz + .json
 │   ├── server.py               # FastAPI: REST + WebSocket + static page
 │   └── static/                 # index.html, app.js, style.css (no build step)
-├── profiles/                   # e.g. transmon-a.json
-├── data/                       # saved runs
+├── profiles/                   # setup profiles + chip parameters (local to the lab PC, not in git)
+├── data/                       # saved runs (not in git)
 └── tests/
 ```
 
