@@ -8,4 +8,5 @@ profiles/
 
 # Claude Code instructions and settings (local only)
 CLAUDE.md
+SPECS.md
 .claude/
