@@ -15,7 +15,7 @@ PNA-X-style web instrument for transmon and fluxonium chips on an RFSoC 4x2 runn
 - **Test-first** at the four agreed test points (developer guide, "Tests"). New behaviour starts as a red test there.
 - **Verify on hardware** after touching `board.py`, `iq.py` or a QICK program: run `.venv/bin/python scripts/hardware_sweep.py` on the bench loopback (DAC_B → ADC_D).
 - **Verify the page** in `--fake` mode with screenshots at desktop and phone widths (headless Chromium is cached in `~/.cache/ms-playwright/`).
-- **Commit messages are plain:** no co-author or attribution lines (user preference). The user pushes to GitHub; SSH to github.com is blocked from this PC.
+- **Commit messages are plain:** no co-author or attribution lines (user preference). SSH to github.com is blocked on the lab network (it works from other networks); there, the user pushes.
 
 ## Gotchas
 
