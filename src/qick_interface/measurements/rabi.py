@@ -35,7 +35,8 @@ class RabiParams(BaseModel):
     readout_length_us: float = _f(1.5, group="Readout", unit="µs", gt=0, le=100, title="Readout window")
     averages: int = _f(500, group="Average", ge=1, title="Averages per round")
     rounds: int = _f(10, group="Average", ge=1, title="Rounds")
-    final_delay_us: float = _f(50.0, group="Average", unit="µs", ge=0, title="Repetition delay")
+    final_delay_us: float = _f(500.0, group="Average", unit="µs", ge=0, title="Repetition delay",
+                              description="Wait between shots so the qubit relaxes: about 5×T1.")
     # the one shot the Output menu's sequence repeats
     scope_gain: float = _f(0.5, group="Output", chip="pi_gain", ge=0, le=1, when={"sweep": "amplitude"},
                            title="Qubit gain", description="The one qubit gain the sequence plays.")

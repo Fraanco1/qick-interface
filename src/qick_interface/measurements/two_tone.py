@@ -31,7 +31,8 @@ class TwoToneParams(BaseModel):
     readout_length_us: float = _f(1.5, group="Readout", unit="µs", gt=0, le=100, title="Readout window")
     averages: int = _f(100, group="Average", ge=1, title="Averages per round")
     rounds: int = _f(10, group="Average", ge=1, title="Rounds")
-    final_delay_us: float = _f(50.0, group="Average", unit="µs", ge=0, title="Repetition delay")
+    final_delay_us: float = _f(500.0, group="Average", unit="µs", ge=0, title="Repetition delay",
+                              description="Wait between shots so the qubit relaxes: about 5×T1.")
     scope_qubit_freq_mhz: float | None = _f(None, group="Output", unit="MHz", chip="qubit_freq_mhz",
                                             title="Qubit frequency",
                                             description="The one qubit frequency the sequence plays (RF).")

@@ -183,6 +183,14 @@ def test_controller_records_chip_parameters_that_viewers_can_read(client):
     assert client.get("/api/parameters/Loopback").json() == {"readout_freq_mhz": 7012.5, "qubit_freq_mhz": 10021.0}
 
 
+@pytest.mark.parametrize("measurement", ["two_tone", "rabi"])
+def test_qubit_measurements_wait_500_us_between_shots_set_in_the_measurement_not_the_chip(client, measurement):
+    delay = client.get("/api/measurements").json()[measurement]["params"]["properties"]["final_delay_us"]
+
+    assert delay["default"] == 500.0
+    assert "from_chip" not in delay
+
+
 def test_each_measurement_says_which_chip_parameter_its_marker_sets(client):
     measurements = client.get("/api/measurements").json()
 
