@@ -12,6 +12,7 @@ qick-interface/
 │   ├── frequency.py            # RF ↔ IF planning, image frequencies, limits
 │   ├── profiles.py             # setup profiles and chip parameters, JSON per chip
 │   ├── iq.py                   # tones on one DAC or an I/Q pair; readouts on one ADC or an I/Q pair
+│   ├── lo.py                   # the Keysight CXG LO over LAN (SCPI), set from the setup
 │   ├── tone.py                 # output tone: continuous or pulse train; also I/Q calibration
 │   ├── measurements/
 │   │   ├── base.py             # what a measurement produces (Update)
@@ -48,7 +49,7 @@ Pure functions, no hardware. Given a setup profile and an RF range, returns the 
 
 ### Setup profiles and chip parameters (`profiles.py`)
 
-One JSON file per chip in `profiles/`: chip name and type, LO frequency and sideband, output path (real / I/Q) with its DACs and I/Q calibration, readout ADC or I/Q return path with its RX calibration, and an optional control line (a DAC of its own for the qubit tone, no mixer). The LO is a plain field until a real LO driver exists; the driver will be added here, not before. Not yet built: flux bias (set by hand).
+One JSON file per chip in `profiles/`: chip name and type, LO frequency and sideband, output path (real / I/Q) with its DACs and I/Q calibration, readout ADC or I/Q return path with its RX calibration, and an optional control line (a DAC of its own for the qubit tone, no mixer). With `--lo`, the session sets the Keysight CXG (`lo.py`) to the setup's LO frequency and power before each run or output tone; without it the LO is set by hand. Not yet built: flux bias (set by hand).
 
 Chip parameters (readout and qubit frequency and gain, π-pulse gain and σ) live in `profiles/parameters/<chip>.json`, are filled from measurement results, and pre-fill measurement forms.
 

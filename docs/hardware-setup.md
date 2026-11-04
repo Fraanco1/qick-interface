@@ -46,7 +46,7 @@ DAC_B (Q) ─┘
 ```
 
 - Setup profile: output path **I/Q**, I = DAC_A, Q = DAC_B, readout input ADC_D.
-- One LO near 6.8 GHz serves both tones (upper sideband): readout at about 7 GHz (IF ≈ 0.2 GHz), qubit at about 10 GHz (IF ≈ 3.2 GHz).
+- One LO serves both tones (upper sideband). The CXG reaches 6 GHz, so with the LO at 6.0 GHz: readout at about 7 GHz (IF ≈ 1.0 GHz, under the ADC's 2.21 GHz), qubit at about 10 GHz (IF ≈ 4.0 GHz, under the DAC's 4.9 GHz; the DAC's own roll-off costs about 2.4 dB there). The MMIQ accepts LO 4–16 GHz and IF up to 6 GHz.
 - The mixer accepts LO 4–16 GHz at 7–16 dBm (13 dBm nominal) and IF from DC to 6 GHz. Datasheet notes: [mixer-mmiq-0416ls.md](research/mixer-mmiq-0416ls.md).
 - Run the [I/Q calibration](user-guide.md#iq-calibration-iq-chips-only) after any change to the LO frequency or power.
 - The return path is a real mixer into one ADC. An I/Q return path (two ADCs) is planned but not built.
@@ -98,7 +98,15 @@ The phase spread between runs must be well under 1°. The delay it prints is the
 
 ## The LO
 
-The LO is set by hand for now; type its frequency into the setup profile. The app uses it only to convert between RF and IF. When the LO is connected to the lab PC, a driver will set it from the profile (see [architecture](architecture.md#setup-profiles-and-chip-parameters-profilespy)).
+The LO is a Keysight **N5166B CXG** (option 506: 9 kHz to 6 GHz, up to about +18 dBm), controlled over **LAN** with SCPI on port 5025.
+
+- Connect it to the lab PC's network and note its IP address (on the CXG: **Utility → I/O Config → LAN Setup**).
+- Start the app with `--lo <address>`, e.g. `.venv/bin/python -m qick_interface --lo 192.168.1.50`.
+- Before every run or output tone, the app sets the CXG to the setup's **LO frequency** and **LO power**, turns modulation off (a pure CW tone) and RF on, waits for it to settle, and checks its error queue. RF stays on between runs. The status bar shows what the CXG read back, e.g. "LO 6.000 000 GHz 14 dBm".
+- An LO above 6 GHz, or a CXG that does not answer, stops the run with a message.
+- The MMIQ-0416LS wants about 13–15 dBm of LO.
+
+Without `--lo` the LO is set by hand: type its frequency into the setup, and the app only uses it to convert between RF and IF.
 
 ## The board service
 

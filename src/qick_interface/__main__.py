@@ -7,6 +7,7 @@ import numpy as np
 import uvicorn
 
 from .board import FakeBoard, QickBoard
+from .lo import CxgLo
 from .server import create_app
 
 FIXTURE = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "soccfg_rfsoc4x2.json"
@@ -52,6 +53,7 @@ def main():
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--data", type=Path, default=Path("data"))
     parser.add_argument("--profiles", type=Path, default=Path("profiles"))
+    parser.add_argument("--lo", metavar="ADDRESS", help="IP address of the CXG LO; without it the LO is set by hand")
     args = parser.parse_args()
 
     if args.fake:
@@ -59,7 +61,9 @@ def main():
         board = FakeBoard(QickConfig(str(FIXTURE)), simulated_chip, round_time_s=0.3)
     else:
         board = QickBoard(host=args.board)
-    uvicorn.run(create_app(board, args.data, args.profiles), host=args.host, port=args.port)
+    host, _, port = (args.lo or "").partition(":")
+    lo = CxgLo(host, int(port or 5025)) if host else None
+    uvicorn.run(create_app(board, args.data, args.profiles, lo), host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

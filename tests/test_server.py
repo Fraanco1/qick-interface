@@ -289,3 +289,45 @@ def test_resonator_sweep_can_store_its_electrical_delay_in_the_setup(client):
     sweep = client.get("/api/measurements").json()["resonator_sweep"]
 
     assert sweep["setup_sets"] == {"Electrical delay (ns)": "electrical_delay_ns"}
+
+
+def test_a_run_sets_the_lo_from_the_setup_and_leaves_it_on(tmp_path):
+    from fake_cxg import FakeCxg
+    from qick_interface.lo import CxgLo
+    cxg = FakeCxg()
+    app = create_app(FakeBoard(SOCCFG, flat_response), data_dir=tmp_path / "data",
+                     profiles_dir=tmp_path / "profiles", lo=CxgLo("127.0.0.1", cxg.port))
+    with TestClient(app) as client:
+        client.post("/api/control", headers=as_client("alice"))
+        transmon = {**LOOPBACK, "chip": "Transmon", "lo_mhz": 6000.0, "lo_power_dbm": 13.0}
+        client.put("/api/profiles/Transmon", json=transmon, headers=as_client("alice"))
+        sweep = {"measurement": "resonator_sweep", "chip": "Transmon",
+                 "params": {"rf_start_mhz": 6900.0, "rf_stop_mhz": 7100.0, "points": 11, "rounds": 1}}
+
+        with client.websocket_connect("/ws") as viewer:
+            viewer.receive_json()
+            assert client.post("/api/runs", json=sweep, headers=as_client("alice")).status_code == 200
+            messages = messages_until_idle(viewer)
+
+    assert (cxg.freq_hz, cxg.power_dbm, cxg.output, cxg.modulation) == (6e9, 13.0, True, False)
+    assert messages[-1]["lo"] == {"freq_mhz": 6000.0, "power_dbm": 13.0, "on": True}
+
+
+def test_an_lo_beyond_the_cxg_range_is_refused_before_the_run(tmp_path):
+    from fake_cxg import FakeCxg
+    from qick_interface.lo import CxgLo
+    cxg = FakeCxg()
+    app = create_app(FakeBoard(SOCCFG, flat_response), data_dir=tmp_path / "data",
+                     profiles_dir=tmp_path / "profiles", lo=CxgLo("127.0.0.1", cxg.port))
+    with TestClient(app) as client:
+        client.post("/api/control", headers=as_client("alice"))
+        high = {**LOOPBACK, "chip": "High", "lo_mhz": 6800.0}
+        client.put("/api/profiles/High", json=high, headers=as_client("alice"))
+        sweep = {"measurement": "resonator_sweep", "chip": "High",
+                 "params": {"rf_start_mhz": 6900.0, "rf_stop_mhz": 7100.0, "points": 11, "rounds": 1}}
+
+        response = client.post("/api/runs", json=sweep, headers=as_client("alice"))
+
+    assert response.status_code == 422
+    assert "6000 MHz" in response.text
+    assert not cxg.output

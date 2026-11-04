@@ -324,6 +324,7 @@ const PROFILE_FIELDS = [
   ["chip", "Chip name", "text"],
   ["chip_type", "Chip type", ["transmon", "fluxonium"]],
   ["lo_mhz", "LO frequency", "number", "MHz", "Leave empty when there is no mixer (RF = IF)."],
+  ["lo_power_dbm", "LO power", "number", "dBm", "Set on the LO when the app controls it (started with --lo). The MMIQ wants about 13–15 dBm."],
   ["sideband", "Sideband", ["upper", "lower"], null, "Upper: RF = LO + IF. Lower: RF = LO − IF."],
   ["output_path", "Output path", ["real", "iq"], null, "I/Q: the tone goes out on two DACs into an I/Q mixer."],
   ["readout_dac", "Readout output", ["DAC_A", "DAC_B"], null, null, "real"],
@@ -343,9 +344,9 @@ const PROFILE_FIELDS = [
   ["rx_phase_deg", "RX Q phase", "number", "°", "0 for an ideal mixer.", "return:iq"],
   ["rx_delay_ps", "RX I/Q delay", "number", "ps", "About 48 ps per cm of I/Q cable difference.", "return:iq"],
 ];
-const NUMBER_FIELDS = ["iq_phase_deg", "iq_gain_ratio", "rx_gain_ratio", "rx_phase_deg", "rx_delay_ps"];
+const NUMBER_FIELDS = ["lo_power_dbm", "iq_phase_deg", "iq_gain_ratio", "rx_gain_ratio", "rx_phase_deg", "rx_delay_ps"];
 
-const NEW_PROFILE = { chip: "", chip_type: "transmon", lo_mhz: null, sideband: "upper", output_path: "real",
+const NEW_PROFILE = { chip: "", chip_type: "transmon", lo_mhz: null, lo_power_dbm: 13, sideband: "upper", output_path: "real",
   readout_dac: "DAC_B", i_dac: "DAC_A", q_dac: "DAC_B", iq_phase_deg: 90, iq_gain_ratio: 1, readout_adc: "ADC_D",
   electrical_delay_ns: null, control_dac: null, return_path: "real", i_adc: "ADC_D", q_adc: "ADC_C", rx_gain_ratio: 1, rx_phase_deg: 0, rx_delay_ps: 0 };
 
@@ -488,6 +489,9 @@ function applyControl() {
   const toneKind = state.tone?.mode === "pulsed" ? "Pulses" : "Tone";
   led.textContent = state.running ? "Measuring" : state.tone ? `${toneKind} ${formatFreq(state.tone.rf_mhz)}` : "Hold";
   led.classList.toggle("on", state.running || !!state.tone);
+  const lo = $("st-lo");  // what the LO read back the last time the app set it
+  lo.hidden = !state.lo;
+  if (state.lo) lo.textContent = `LO ${formatFreq(state.lo.freq_mhz)} ${state.lo.power_dbm} dBm${state.lo.on ? "" : " (RF off)"}`;
 }
 
 function collectParams() {
@@ -653,7 +657,7 @@ function connect() {
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
     if (m.type === "state") {
-      Object.assign(state, { controller: m.controller, controllerName: m.controller_name, running: m.running, tone: m.tone });
+      Object.assign(state, { controller: m.controller, controllerName: m.controller_name, running: m.running, tone: m.tone, lo: m.lo });
       applyControl();
     } else if (m.type === "update") {
       showUpdate(m);

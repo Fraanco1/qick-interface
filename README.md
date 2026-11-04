@@ -40,6 +40,7 @@ The board must be running the QICK Pyro4 service; see [hardware setup](docs/hard
 | `--port` | `8080` | Port the page is served on |
 | `--data` | `data` | Folder where runs are saved |
 | `--profiles` | `profiles` | Folder with setup profiles and chip parameters |
+| `--lo` | none | IP address of the Keysight CXG LO; the app then sets it from the setup before each run. Without it, the LO is set by hand |
 
 ## Documentation
 

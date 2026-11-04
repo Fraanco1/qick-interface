@@ -21,8 +21,9 @@ class Busy(RuntimeError):
 
 
 class Session:
-    def __init__(self, board, measurements: dict, data_dir: Path):
+    def __init__(self, board, measurements: dict, data_dir: Path, lo=None):
         self._board = board
+        self._lo = lo  # None: the LO is set by hand
         self._data_dir = data_dir
         self._measurements = measurements
         self._lock = threading.Lock()
@@ -33,6 +34,7 @@ class Session:
         self.controller: str | None = None
         self.controller_name: str | None = None
         self.tone: dict | None = None  # calibration tone currently playing
+        self.lo: dict | None = None    # what the LO last read back, when the app controls it
         self.last_update: dict | None = None
 
     # --- listeners ---------------------------------------------------------
@@ -55,7 +57,7 @@ class Session:
 
     def state(self) -> dict:
         return {"type": "state", "controller": self.controller, "controller_name": self.controller_name,
-                "running": self.running, "tone": self.tone}
+                "running": self.running, "tone": self.tone, "lo": self.lo}
 
     @property
     def running(self) -> bool:
@@ -78,21 +80,28 @@ class Session:
         with self._start_lock:  # two quick clicks must not start two runs
             if self.running:
                 raise Busy("A run is already in progress.")
+            self._set_lo(profile)
             self._silence()
             self._stop.clear()
             self._worker = threading.Thread(target=self._run, args=(measurement, m, profile, parsed),
                                             daemon=True)
             self._worker.start()
 
-    def play_tone(self, client_id: str, program, settings: dict) -> None:
+    def play_tone(self, client_id: str, program, settings: dict, profile=None) -> None:
         """Leave a calibration tone playing until tone_off() or the next run."""
         self._check_controller(client_id)
         with self._start_lock:
             if self.running:
                 raise Busy("Stop the run before playing a calibration tone.")
+            self._set_lo(profile)
             self._board.play(program)
             self.tone = settings
         self.broadcast(self.state())
+
+    def _set_lo(self, profile) -> None:
+        """Make the LO match the setup (when the app controls one and the setup uses one)."""
+        if self._lo is not None and profile is not None and profile.lo_mhz is not None:
+            self.lo = self._lo.apply(profile.lo_mhz, profile.lo_power_dbm)
 
     def tone_off(self, client_id: str) -> None:
         self._check_controller(client_id)

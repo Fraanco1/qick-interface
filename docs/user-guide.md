@@ -31,6 +31,7 @@ Each chip has a *setup profile*: how it is wired. Open **Setup**:
 | Chip name | A name for this specific chip, e.g. "Transmon A". Letters, digits, spaces, `.`, `_` and `-`. |
 | Chip type | Transmon or fluxonium. |
 | LO frequency | The external LO, in MHz. Leave it empty when there is no mixer (RF = IF), for example a loopback test. |
+| LO power | Set on the LO when the app controls it (started with `--lo`), in dBm. The MMIQ wants about 13–15 dBm. |
 | Sideband | Upper: RF = LO + IF. Lower: RF = LO − IF. |
 | Output path | Real: the tone leaves on one DAC. I/Q: the same tone on two DACs, 90° apart, into an I/Q mixer. |
 | Readout output | The DAC used on the real path. |
@@ -137,7 +138,7 @@ Measurement: **Two-tone spectroscopy**. **Readout → Readout frequency** is alr
 | Readout | Readout frequency, gain, pulse length, window, time of flight |
 | Average | Averages, Rounds, Repetition delay (default 50 µs, so the qubit relaxes between shots) |
 
-The qubit tone may use an IF up to 4915.2 MHz, since only the DAC has to produce it. With the LO at 6.8 GHz, a qubit near 10 GHz needs an IF of about 3.2 GHz, which the MMIQ-0416LS accepts. With a **Control line** in the setup (e.g. a fluxonium), the qubit tone goes out on that DAC instead, with no mixer, so the qubit frequencies you type are the DAC frequencies.
+The qubit tone may use an IF up to 4915.2 MHz, since only the DAC has to produce it. With the LO at 6.0 GHz (the CXG's maximum), a qubit near 10 GHz needs an IF of about 4.0 GHz, which the DAC and the MMIQ-0416LS accept. With a **Control line** in the setup (e.g. a fluxonium), the qubit tone goes out on that DAC instead, with no mixer, so the qubit frequencies you type are the DAC frequencies.
 
 The qubit shows as a dip or peak in the readout signal. Put the marker on it and press **Marker → Qubit frequency**.
 

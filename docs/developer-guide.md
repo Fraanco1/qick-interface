@@ -129,7 +129,7 @@ Tests are written first (red, then green) and only at four agreed places:
 |---|---|---|---|
 | Frequency planning | `tests/test_frequency.py` | wiring and sideband mistakes, out-of-range IFs | QICK's frequency rounding |
 | Measurements on `FakeBoard` | `tests/test_resonator_sweep.py`, `test_cw_time.py`, `test_two_tone.py`, `test_rabi.py`, `test_iq_return.py` | the program compiles for this firmware, axes, processing, fits | real timing, Pyro4 |
-| Server | `tests/test_server.py` | controller rules, schemas, live updates, saving, tone | how the page looks |
+| Server | `tests/test_server.py` (with `tests/fake_cxg.py`, a stand-in CXG on localhost) | controller rules, schemas, live updates, saving, tone | how the page looks |
 | Real board | `scripts/hardware_sweep.py`, `scripts/hardware_two_readouts.py` (manual) | the whole chain on hardware | — |
 
 - **Firmware fixture.** Measurement tests compile real QICK programs against `tests/fixtures/soccfg_rfsoc4x2.json`, a copy of the board's firmware configuration. After changing the firmware, refresh it:
@@ -183,7 +183,7 @@ WebSocket messages have a `type`:
 
 ## Conventions
 
-- **Simplicity:** the simplest code that solves today's problem. No configuration or abstraction without a second user (e.g. no LO class until there is an LO driver).
+- **Simplicity:** the simplest code that solves today's problem. No configuration or abstraction without a second user (e.g. one concrete LO driver, `CxgLo`, with no LO base class until a second LO model exists).
 - **Vocabulary:** names follow the [glossary](../GLOSSARY.md). Update it when a term is settled.
 - **Decision records:** record hard-to-reverse, non-obvious decisions as a short [ADR](adr/).
 - **Code review:** review before merging, and verify on the bench loopback what can be verified there.
@@ -191,5 +191,5 @@ WebSocket messages have a `type`:
 ## Not built yet
 
 - Flux bias from the app (it is set by hand on its own coil).
-- LO driver, once the LO is connected to the lab PC.
+- Testing the LO driver against the real CXG (it is tested against `tests/fake_cxg.py`).
 - Viewers see the controller's frequency range only in the status bar, not in the form fields.

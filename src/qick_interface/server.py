@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 
 from .tone import OutputTone, tone_program
 from .frequency import FrequencyError
+from .lo import LoError
 from .measurements.cw_time import CwTime
 from .measurements.resonator_sweep import ResonatorSweep
 from .measurements.rabi import Rabi
@@ -29,9 +30,9 @@ class RunRequest(BaseModel):
     params: dict
 
 
-def create_app(board, data_dir: Path, profiles_dir: Path) -> FastAPI:
+def create_app(board, data_dir: Path, profiles_dir: Path, lo=None) -> FastAPI:
     app = FastAPI(title="QICK interface")
-    session = Session(board, MEASUREMENTS, data_dir)
+    session = Session(board, MEASUREMENTS, data_dir, lo)
     app.state.session = session
 
     @app.get("/api/measurements")
@@ -94,6 +95,8 @@ def create_app(board, data_dir: Path, profiles_dir: Path) -> FastAPI:
         except ValidationError as e:
             raise HTTPException(422, [{"field": ".".join(map(str, err["loc"])), "message": err["msg"]}
                                       for err in e.errors()])
+        except LoError as e:
+            raise HTTPException(422, str(e))
         return session.state()
 
     @app.post("/api/tone")
@@ -102,12 +105,12 @@ def create_app(board, data_dir: Path, profiles_dir: Path) -> FastAPI:
         if profile is None:
             raise HTTPException(404, f"No setup profile for chip {tone.chip!r}.")
         try:
-            session.play_tone(x_client_id, tone_program(board.soccfg, profile, tone), tone.model_dump())
+            session.play_tone(x_client_id, tone_program(board.soccfg, profile, tone), tone.model_dump(), profile)
         except NotController as e:
             raise HTTPException(403, str(e))
         except Busy as e:
             raise HTTPException(409, str(e))
-        except FrequencyError as e:
+        except (FrequencyError, LoError) as e:
             raise HTTPException(422, str(e))
         return session.state()
 
