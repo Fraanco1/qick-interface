@@ -34,10 +34,6 @@ _Avoid_: mirror, ghost, unwanted sideband
 One specific device under test, identified by name (e.g. "Transmon A").
 _Avoid_: sample, DUT, device
 
-**Chip type**:
-The kind of chip: transmon or fluxonium.
-_Avoid_: chip family, platform
-
 **Readout line**:
 The transmission line through the chip whose resonators are measured.
 _Avoid_: feedline, probe line

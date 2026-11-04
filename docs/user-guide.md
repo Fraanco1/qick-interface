@@ -8,7 +8,7 @@ Open `http://<lab-PC-address>:8080`.
 
 - **Title bar:** the *chip* being measured, the *measurement*, who controls the board, your name, and **Take control**.
 - **Screen:** two plot windows on a 10-division grid. The line above each window shows the trace, its scale per division and the reference value (at the ▶ arrow), like a PNA-X.
-- **Soft keys** (right): menus with the measurement's settings, plus **Scale**, **Marker**, **Output**, **Setup** and, for chips with an I/Q output, **I/Q cal**. **Run sweep** and **Stop** are at the bottom.
+- **Soft keys** (right): menus with the measurement's settings, plus **Scale**, **Marker**, **Setup**, **Output** (two-tone and Rabi only) and, for chips with an I/Q output, **I/Q cal**. A menu shows only the fields that apply to the current mode. **Run sweep** (**Run** in CW Time) and **Stop** are at the bottom.
 - **Status bar:** what is on screen (measurement, start, stop, points, round), the board state (**Hold**, **Measuring** or **Tone**), and messages. Errors show in red.
 
 On a phone the soft keys move under the screen.
@@ -29,14 +29,14 @@ Each chip has a *setup profile*: how it is wired. Open **Setup**:
 | Field | Meaning |
 |---|---|
 | Chip name | A name for this specific chip, e.g. "Transmon A". Letters, digits, spaces, `.`, `_` and `-`. |
-| Chip type | Transmon or fluxonium. |
 | LO frequency | The external LO, in MHz. Leave it empty when there is no mixer (RF = IF), for example a loopback test. |
-| LO power | Set on the LO when the app controls it (started with `--lo`), in dBm. The MMIQ wants about 13–15 dBm. |
-| Sideband | Upper: RF = LO + IF. Lower: RF = LO − IF. |
+| LO power | Set on the LO when the app controls it (started with `--lo`), in dBm. The MMIQ wants about 13–15 dBm. Shown only with an LO frequency. |
+| Sideband | Upper: RF = LO + IF. Lower: RF = LO − IF. Shown only with an LO frequency. |
 | Output path | Real: the tone leaves on one DAC. I/Q: the same tone on two DACs, 90° apart, into an I/Q mixer. |
 | Readout output | The DAC used on the real path. |
 | I output, Q output | The DACs used on the I/Q path (normally I = DAC_A, Q = DAC_B). |
 | Electrical delay | Subtracted from the resonator sweep's phase, in ns. Empty: fitted on each sweep. Filled from a wide sweep (see [Resonator sweep](#1-resonator-sweep)). |
+| Time of flight | From the trigger to when the signal reaches the ADC, in µs: cables, chip and the board's own latency (0.29 µs on the bench loopback). Every pulsed measurement opens its readout window this late. |
 | Control line | None, or a DAC of its own for the qubit tone, with no mixer: the qubit frequency you type is the DAC frequency (up to 4915 MHz). Used by two-tone and Rabi. It can't be a DAC the readout output already uses. |
 | Return path | Real: the signal comes back through a real mixer into one ADC. I/Q: through an I/Q mixer into two ADCs, combined in software, which rejects the image band (see [RX I/Q calibration](#rx-iq-calibration-iq-return-only)). |
 | Readout input | The ADC that receives the signal (real return path). |
@@ -86,14 +86,14 @@ Measurement: **Resonator sweep**.
 |---|---|
 | Sweep | Start, Stop (RF, MHz), Points |
 | Power | Gain (0–1, fraction of full DAC scale) |
-| Timing | Mode (Pulsed or CW), Settling time (CW), Pulse length (pulsed), Readout window, Time of flight, Repetition delay (pulsed) |
+| Timing | Mode (Pulsed or CW); Pulse length and Repetition delay (pulsed); Settling time (CW); Readout window |
 | Average | Averages per round, Rounds |
 
 Press **Run sweep**. The traces update after every round; **Stop** ends the run after the current round.
 
 **Pulsed or CW.**
 
-- **Pulsed** (default): each shot sends one pulse, and the readout window opens one time of flight after the pulse starts.
+- **Pulsed** (default): each shot sends one pulse, and the readout window opens one time of flight (from the setup) after the pulse starts.
 - **CW** works like a PNA-X: the tone stays on and steps from frequency to frequency. At each point the app waits the **Settling time**, then measures over the readout window. Use CW for high-Q resonators, which don't reach steady state within a short pulse (loaded Q above about 10⁵ at 7 GHz). Make the settling time a few times the resonator's 1/κ: 1/κ ≈ 2.3 µs for κ/2π = 70 kHz.
 
 On the bench loopback both modes give the same |S21| and phase (amplitude ratio 1.0000, phase within 0.4°). A longer readout window averages more noise away, like a lower IF bandwidth on the PNA-X.
@@ -135,7 +135,7 @@ Measurement: **Two-tone spectroscopy**. **Readout → Readout frequency** is alr
 |---|---|
 | Sweep | Qubit start, Qubit stop (RF, MHz), Points |
 | Qubit | Qubit gain, Qubit pulse length |
-| Readout | Readout frequency, gain, pulse length, window, time of flight |
+| Readout | Readout frequency, gain, pulse length, window |
 | Average | Averages, Rounds, Repetition delay (default 50 µs, so the qubit relaxes between shots) |
 
 The qubit tone may use an IF up to 4915.2 MHz, since only the DAC has to produce it. With the LO at 6.0 GHz (the CXG's maximum), a qubit near 10 GHz needs an IF of about 4.0 GHz, which the DAC and the MMIQ-0416LS accept. With a **Control line** in the setup (e.g. a fluxonium), the qubit tone goes out on that DAC instead, with no mixer, so the qubit frequencies you type are the DAC frequencies.
@@ -146,8 +146,8 @@ The qubit shows as a dip or peak in the readout signal. Put the marker on it and
 
 Measurement: **Rabi**. Qubit and readout frequencies are filled in from steps 1 and 2.
 
-- **Sweep = Amplitude:** a Gaussian pulse of width **Gaussian σ** (total length 4σ) whose gain goes from Start to Stop.
-- **Sweep = Length:** a flat pulse of gain **Qubit gain** whose length goes from Start to Stop (µs).
+- **Sweep = Amplitude:** a Gaussian pulse of width **Gaussian σ** (total length 4σ) whose gain goes from Start to Stop. The Qubit menu shows Gaussian σ.
+- **Sweep = Length:** a flat pulse of gain **Qubit gain** whose length goes from Start to Stop (µs). The Qubit menu shows Qubit gain.
 
 **Tr1** is the readout signal along the direction it moves in the I/Q plane, with a damped-cosine fit as a dashed white line. **Tr2** is the phase.
 
@@ -155,7 +155,7 @@ When the fit explains the data, the screen shows the π-pulse (gain, or length i
 
 ## Sending a tone (Output)
 
-**Output** sends a tone on the selected chip's output path, like the CW source of a PNA-X, for checking cables, mixers and levels with an oscilloscope or spectrum analyzer. It works for every chip; on the I/Q path the tone goes out on both DACs with the saved I/Q calibration.
+**Output** (in two-tone and Rabi) sends a tone on the selected chip's output path, for checking pulses, cables, mixers and levels with an oscilloscope or spectrum analyzer. For a continuous tone at the readout, CW Time does the same while it measures. It works for every chip; on the I/Q path the tone goes out on both DACs with the saved I/Q calibration.
 
 | Field | Meaning |
 |---|---|

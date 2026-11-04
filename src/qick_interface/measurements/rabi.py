@@ -14,8 +14,8 @@ from ..profiles import SetupProfile
 from .base import Update, received_s21
 
 
-def _f(default=..., group=None, unit=None, chip=None, **kw):
-    extra = {k: v for k, v in (("group", group), ("unit", unit), ("from_chip", chip)) if v}
+def _f(default=..., group=None, unit=None, chip=None, when=None, **kw):
+    extra = {k: v for k, v in (("group", group), ("unit", unit), ("from_chip", chip), ("shown_when", when)) if v}
     return Field(default, json_schema_extra=extra, **kw)
 
 
@@ -25,14 +25,13 @@ class RabiParams(BaseModel):
     stop: float = _f(1.0, group="Sweep", gt=0, title="Stop", description="gain, or µs for a length sweep")
     points: int = _f(101, group="Sweep", ge=3, le=2001, title="Points")
     qubit_freq_mhz: float = _f(group="Qubit", unit="MHz", chip="qubit_freq_mhz", title="Qubit frequency")
-    qubit_gain: float = _f(0.5, group="Qubit", chip="qubit_gain", ge=0, le=1, title="Qubit gain (length sweep)")
+    qubit_gain: float = _f(0.5, group="Qubit", chip="qubit_gain", ge=0, le=1, when={"sweep": "length"}, title="Qubit gain")
     sigma_us: float = _f(0.02, group="Qubit", unit="µs", chip="pi_sigma_us", gt=0, le=10,
-                         title="Gaussian σ (amplitude sweep)")
+                         when={"sweep": "amplitude"}, title="Gaussian σ")
     readout_freq_mhz: float = _f(group="Readout", unit="MHz", chip="readout_freq_mhz", title="Readout frequency")
     readout_gain: float = _f(0.5, group="Readout", chip="readout_gain", ge=0, le=1, title="Readout gain")
     readout_pulse_us: float = _f(2.0, group="Readout", unit="µs", gt=0, le=100, title="Readout pulse length")
     readout_length_us: float = _f(1.5, group="Readout", unit="µs", gt=0, le=100, title="Readout window")
-    trigger_delay_us: float = _f(0.3, group="Readout", unit="µs", ge=0, title="Time of flight")
     averages: int = _f(500, group="Average", ge=1, title="Averages per round")
     rounds: int = _f(10, group="Average", ge=1, title="Rounds")
     final_delay_us: float = _f(50.0, group="Average", unit="µs", ge=0, title="Repetition delay")
@@ -64,6 +63,7 @@ class _Program(TonesMixin, AveragerProgramV2):
 
 class Rabi:
     name = "Rabi"
+    output_tone = True  # the Output menu: a pulse train with a PMOD0_0 marker, to check pulses on a scope
     Params = RabiParams
     x_axis = {"title": "Qubit gain", "unit": ""}
     marker_sets = None
@@ -96,7 +96,7 @@ class Rabi:
             "readout_gain": params.readout_gain,
             "readout_pulse": params.readout_pulse_us,
             "readout_length": params.readout_length_us,
-            "trigger_delay": params.trigger_delay_us,
+            "trigger_delay": profile.time_of_flight_us,
         })
         x = cls.x_values(program)
         if params.sweep == "amplitude":

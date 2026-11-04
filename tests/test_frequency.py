@@ -5,7 +5,7 @@ from qick_interface.profiles import SetupProfile
 
 
 def profile(lo_mhz, sideband="upper"):
-    return SetupProfile(chip="Test chip", chip_type="transmon", lo_mhz=lo_mhz, sideband=sideband)
+    return SetupProfile(chip="Test chip", lo_mhz=lo_mhz, sideband=sideband)
 
 
 def test_upper_sideband_puts_rf_above_lo_and_image_below():
@@ -54,7 +54,7 @@ def test_drive_tones_may_use_the_dac_range_beyond_the_adc_limit():
 
 def test_control_line_tones_go_straight_out_of_the_dac():
     from qick_interface.frequency import plan_drive
-    fluxonium = SetupProfile(chip="F", chip_type="fluxonium", lo_mhz=6800.0, control_dac="DAC_A")
+    fluxonium = SetupProfile(chip="F", lo_mhz=6800.0, control_dac="DAC_A")
 
     plan = plan_drive(fluxonium, 300.0, 900.0)
 

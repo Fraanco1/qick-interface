@@ -39,7 +39,9 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None) -> FastAPI:
     def measurements():
         return {key: {"name": m.name, "params": m.Params.model_json_schema(), "x_axis": m.x_axis,
                       "plots": m.plots, "marker_sets": m.marker_sets, "info_sets": m.info_sets,
-                      "setup_sets": getattr(m, "setup_sets", {}), "setup_label": getattr(m, "setup_label", "")}
+                      "setup_sets": getattr(m, "setup_sets", {}), "setup_label": getattr(m, "setup_label", ""),
+                      "output_tone": getattr(m, "output_tone", False), "run_key": getattr(m, "run_key", "Run sweep"),
+                      "setup_requires": getattr(m, "setup_requires", {})}
                 for key, m in MEASUREMENTS.items()}
 
     @app.get("/api/profiles")

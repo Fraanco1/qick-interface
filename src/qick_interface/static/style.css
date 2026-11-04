@@ -81,6 +81,7 @@ button, input, select { font: inherit; color: inherit; }
 .empty {
   position: absolute; inset: 0; display: grid; place-items: center;
   color: #7d858e; font-size: 15px; pointer-events: none;
+  padding: 0 16px 0 72px; text-align: center;  /* clear of the y-axis labels */
 }
 .marker-readout {
   position: absolute; top: 22px; right: 10px;

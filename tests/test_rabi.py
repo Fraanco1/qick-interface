@@ -9,9 +9,14 @@ from qick_interface.measurements.rabi import Rabi, RabiParams
 from qick_interface.profiles import SetupProfile
 
 SOCCFG = QickConfig(str(Path(__file__).parent / "fixtures" / "soccfg_rfsoc4x2.json"))
-TRANSMON = SetupProfile(chip="Transmon A", chip_type="transmon", lo_mhz=6800.0, output_path="iq",
+TRANSMON = SetupProfile(chip="Transmon A", lo_mhz=6800.0, output_path="iq",
                         i_dac="DAC_A", q_dac="DAC_B")
 BASE = dict(qubit_freq_mhz=10050.0, readout_freq_mhz=7000.0, points=101, rounds=1)
+
+
+def window_start_us(program):
+    """When the readout window opens in the program's timeline (its trigger time), in µs."""
+    return next(m.t for m in program.macro_list if type(m).__name__ == "Trigger" and m.ros)
 
 
 def oscillating(x_pi, decay=None):
@@ -56,7 +61,7 @@ def test_no_pi_pulse_is_reported_when_there_is_no_oscillation():
 
 
 def test_rabi_drives_the_qubit_on_the_control_line_when_the_setup_has_one():
-    fluxonium = SetupProfile(chip="Fluxonium A", chip_type="fluxonium", lo_mhz=6800.0, readout_dac="DAC_B",
+    fluxonium = SetupProfile(chip="Fluxonium A", lo_mhz=6800.0, readout_dac="DAC_B",
                              control_dac="DAC_A")
     programs = []
 
@@ -69,3 +74,15 @@ def test_rabi_drives_the_qubit_on_the_control_line_when_the_setup_has_one():
 
     assert programs[0].pulses["qubit"].gen_chs == [1]
     assert programs[0].get_pulse_param("qubit", "freq") == pytest.approx(500.0, abs=1e-3)
+
+
+def test_the_window_opens_after_the_setups_time_of_flight():
+    programs = []
+
+    def capture(program):
+        programs.append(program)
+        return oscillating(0.4)(program)
+
+    list(Rabi.run(FakeBoard(SOCCFG, capture), TRANSMON.model_copy(update={"time_of_flight_us": 0.45}), RabiParams(**BASE, sweep="amplitude", start=0.0, stop=1.0)))
+
+    assert window_start_us(programs[0]) == pytest.approx(0.45, abs=0.002)

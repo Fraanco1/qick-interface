@@ -33,7 +33,7 @@ def test_lists_measurements_with_their_parameter_forms(client):
     assert sweep["params"]["properties"]["rf_start_mhz"]["unit"] == "MHz"
 
 
-LOOPBACK = {"chip": "Loopback", "chip_type": "transmon", "lo_mhz": None,
+LOOPBACK = {"chip": "Loopback", "lo_mhz": None,
             "readout_dac": "DAC_B", "readout_adc": "ADC_D"}
 
 
@@ -147,7 +147,7 @@ def test_points_without_signal_reach_viewers_as_gaps(tmp_path):
     assert update["traces"]["|S21| (dB)"][0] is None
 
 
-IQ_SETUP = {"chip": "Transmon A", "chip_type": "transmon", "lo_mhz": 6800.0, "output_path": "iq",
+IQ_SETUP = {"chip": "Transmon A", "lo_mhz": 6800.0, "output_path": "iq",
             "i_dac": "DAC_A", "q_dac": "DAC_B"}
 
 
@@ -331,3 +331,52 @@ def test_an_lo_beyond_the_cxg_range_is_refused_before_the_run(tmp_path):
     assert response.status_code == 422
     assert "6000 MHz" in response.text
     assert not cxg.output
+
+
+def test_time_of_flight_is_part_of_the_setup_not_of_any_measurement(client):
+    measurements = client.get("/api/measurements").json()
+
+    assert all("trigger_delay_us" not in m["params"]["properties"] for m in measurements.values())
+    client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json={**LOOPBACK, "time_of_flight_us": 0.29}, headers=as_client("alice"))
+    assert client.get("/api/profiles").json()["Loopback"]["time_of_flight_us"] == 0.29
+
+
+def test_profiles_saved_with_the_old_chip_type_field_still_load(client, tmp_path):
+    (tmp_path / "profiles").mkdir()
+    (tmp_path / "profiles" / "Old.json").write_text(json.dumps({"chip": "Old", "chip_type": "fluxonium"}))
+
+    assert "chip_type" not in client.get("/api/profiles").json()["Old"]
+
+
+def test_fields_say_when_they_apply(client):
+    measurements = client.get("/api/measurements").json()
+    sweep = measurements["resonator_sweep"]["params"]["properties"]
+    rabi = measurements["rabi"]["params"]["properties"]
+
+    assert sweep["pulse_length_us"]["shown_when"] == {"mode": "pulsed"}
+    assert sweep["final_delay_us"]["shown_when"] == {"mode": "pulsed"}
+    assert sweep["settle_us"]["shown_when"] == {"mode": "cw"}
+    assert rabi["qubit_gain"]["shown_when"] == {"sweep": "length"}
+    assert rabi["sigma_us"]["shown_when"] == {"sweep": "amplitude"}
+
+
+def test_only_pulsed_qubit_measurements_offer_the_output_tone(client):
+    measurements = client.get("/api/measurements").json()
+
+    assert {k for k, m in measurements.items() if m["output_tone"]} == {"two_tone", "rabi"}
+
+
+def test_cw_time_runs_with_a_run_key_and_the_others_with_run_sweep(client):
+    measurements = client.get("/api/measurements").json()
+
+    assert {k: m["run_key"] for k, m in measurements.items()} == {
+        "resonator_sweep": "Run sweep", "cw_time": "Run", "two_tone": "Run sweep", "rabi": "Run sweep",
+        "rx_iq_cal": "Run sweep"}
+
+
+def test_rx_calibration_is_offered_only_for_an_iq_return_path(client):
+    measurements = client.get("/api/measurements").json()
+
+    assert measurements["rx_iq_cal"]["setup_requires"] == {"return_path": "iq"}
+    assert measurements["resonator_sweep"]["setup_requires"] == {}

@@ -18,7 +18,7 @@ GAIN, PHASE_DEG, DELAY_PS = 0.9, 5.0, 48.0
 
 def iq_setup(sideband="upper", calibrated=True):
     rx = dict(rx_gain_ratio=GAIN, rx_phase_deg=PHASE_DEG, rx_delay_ps=DELAY_PS) if calibrated else {}
-    return SetupProfile(chip="Transmon A", chip_type="transmon", lo_mhz=6000.0 if sideband == "upper" else 6300.0,
+    return SetupProfile(chip="Transmon A", lo_mhz=6000.0 if sideband == "upper" else 6300.0,
                         sideband=sideband, return_path="iq", i_adc="ADC_D", q_adc="ADC_C", **rx)
 
 
@@ -86,7 +86,7 @@ def test_calibration_measures_the_imbalance_even_across_a_resonance():
 
 
 def test_calibration_needs_an_iq_return_path():
-    real = SetupProfile(chip="Fluxonium", chip_type="fluxonium", lo_mhz=6000.0)
+    real = SetupProfile(chip="Fluxonium", lo_mhz=6000.0)
     params = RxIqCal.Params(rf_start_mhz=6100.0, rf_stop_mhz=6200.0, rounds=1)
 
     with pytest.raises(ValueError, match="Return path"):

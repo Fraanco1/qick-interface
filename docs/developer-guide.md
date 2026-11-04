@@ -47,6 +47,7 @@ A pydantic model. Each field's `json_schema_extra` tells the page how to show it
 | `group` | The soft-key menu the field appears in (e.g. "Sweep", "Readout"). |
 | `unit` | Shown next to the input. |
 | `from_chip` | The chip parameter that pre-fills the field (e.g. `"readout_freq_mhz"`). |
+| `shown_when` | Show the field only while other fields have these values, e.g. `{"mode": "pulsed"}`. |
 
 Use `title` for the label and `description` for a hint under the field. `ge`/`le`/`gt` limits are checked by the server, and a violation comes back to the page as a readable error. A `Literal[...]` field becomes a drop-down. `two_tone.py` and `rabi.py` define a small `_f()` helper that builds these fields.
 
@@ -69,7 +70,7 @@ class _Program(TonesMixin, AveragerProgramV2):
         self.play_tone(cfg, "qubit", t=0)
         self.delay_auto(t=0.05)
         self.play_tone(cfg, "readout", t=0)
-        self.read(cfg, pins=[0], t=cfg["trigger_delay"])
+        self.read(cfg, pins=[0], t=cfg["trigger_delay"])  # profile.time_of_flight_us
 ```
 
 A qubit tone goes on the chip's control line when the setup has one: put `control_outputs()` in `cfg["control"]`, pass `line="control"` to `add_tone` (and `add_gauss_envelope`), and plan its frequency with `plan_drive()` (x axis: `drive_rf_from_if()`). `play_tone` remembers each tone's line.
@@ -96,6 +97,9 @@ class MyMeasurement:
              {"title": "S21 Phase", "unit": "°", "traces": ["Phase (°)"]}]   # exactly two windows
     marker_sets = "qubit_freq_mhz"                   # what "Marker → …" stores, or None
     info_sets = {}                                   # fit result name → chip parameter
+    output_tone = True                               # optional: show the Output menu (pulsed measurements)
+    run_key = "Run sweep"                            # optional: the run key's label (default)
+    setup_requires = {}                              # optional: e.g. {"return_path": "iq"}; else not listed
 
     @classmethod
     def run(cls, board, profile, params, should_stop=lambda: False):
@@ -162,7 +166,7 @@ Requests that change anything carry `X-Client-Id` (a random id per browser) and 
 
 | Method and path | Purpose |
 |---|---|
-| `GET /api/measurements` | Measurements with parameter schemas, x axis, plots, `marker_sets`, `info_sets` |
+| `GET /api/measurements` | Measurements with parameter schemas, x axis, plots, `marker_sets`, `info_sets`, `output_tone`, `run_key`, `setup_requires` |
 | `GET /api/profiles` · `PUT /api/profiles/{chip}` | List, create or replace setup profiles (controller only) |
 | `GET /api/parameters/{chip}` · `PATCH /api/parameters/{chip}` | Read, add or overwrite chip parameters (controller only) |
 | `POST /api/control` | Become the controller |

@@ -14,7 +14,7 @@ from qick_interface.measurements.resonator_sweep import ResonatorSweep, Resonato
 from qick_interface.profiles import SetupProfile
 
 start, stop, points = (float(sys.argv[1]), float(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (100.0, 1000.0, 1001)
-profile = SetupProfile(chip="Loopback", chip_type="transmon", lo_mhz=None, readout_dac="DAC_B", readout_adc="ADC_D")
+profile = SetupProfile(chip="Loopback", lo_mhz=None, readout_dac="DAC_B", readout_adc="ADC_D")
 params = ResonatorSweepParams(rf_start_mhz=start, rf_stop_mhz=stop, points=points, averages=100, rounds=5)
 
 board = QickBoard()

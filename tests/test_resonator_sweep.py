@@ -9,7 +9,12 @@ from qick_interface.measurements.resonator_sweep import ResonatorSweep, Resonato
 from qick_interface.profiles import SetupProfile
 
 SOCCFG = QickConfig(str(Path(__file__).parent / "fixtures" / "soccfg_rfsoc4x2.json"))
-PROFILE = SetupProfile(chip="Test chip", chip_type="transmon", lo_mhz=6000.0, sideband="upper")
+PROFILE = SetupProfile(chip="Test chip", lo_mhz=6000.0, sideband="upper")
+
+
+def window_start_us(program):
+    """When the readout window opens in the program's timeline (its trigger time), in µs."""
+    return next(m.t for m in program.macro_list if type(m).__name__ == "Trigger" and m.ros)
 
 
 def notch(if_center_mhz, width_mhz=2.0, delay_us=0.05):
@@ -58,7 +63,7 @@ def test_run_stops_after_the_current_round_when_asked():
 
 
 def test_iq_output_plays_i_and_q_on_two_dacs_with_the_calibrated_offset():
-    iq_profile = SetupProfile(chip="Transmon A", chip_type="transmon", lo_mhz=6800.0,
+    iq_profile = SetupProfile(chip="Transmon A", lo_mhz=6800.0,
                               output_path="iq", i_dac="DAC_A", q_dac="DAC_B",
                               iq_phase_deg=93.0, iq_gain_ratio=0.9)
     programs = []
@@ -115,7 +120,7 @@ def test_s21_does_not_change_with_the_gain():
 
 
 def test_lower_sideband_shows_the_chip_phase_not_its_mirror_image():
-    lower = SetupProfile(chip="Test chip", chip_type="transmon", lo_mhz=6300.0, sideband="lower")
+    lower = SetupProfile(chip="Test chip", lo_mhz=6300.0, sideband="lower")
     response, simulate = chip_seen_by_the_board(lower)
     params = ResonatorSweepParams(rf_start_mhz=6100.0, rf_stop_mhz=6200.0, points=401, gain=1.0, rounds=1)
 
@@ -154,3 +159,11 @@ def test_a_stored_delay_keeps_the_resonance_phase_on_a_narrow_sweep():
 
     assert phase_error(kept) < 0.1    # only a constant offset removed
     assert phase_error(fitted) > 5    # the per-sweep fit tilts the resonance's own phase
+
+
+def test_the_window_opens_after_the_setups_time_of_flight():
+    profile = PROFILE.model_copy(update={"time_of_flight_us": 0.45})
+    program, _, _ = ResonatorSweep.program(FakeBoard(SOCCFG, notch(150.0)), profile,
+                                           ResonatorSweepParams(rf_start_mhz=6100.0, rf_stop_mhz=6200.0))
+
+    assert window_start_us(program) == pytest.approx(0.45, abs=0.002)

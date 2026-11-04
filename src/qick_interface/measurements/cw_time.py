@@ -50,6 +50,7 @@ class _Program(TonesMixin, AveragerProgramV2):
 
 class CwTime:
     name = "CW Time"
+    run_key = "Run"  # it runs until Stop; there is no sweep to start
     Params = CwTimeParams
     x_axis = {"title": "Time", "unit": "µs"}
     plots = [{"title": "S21 LogMag", "unit": "dB", "traces": ["|S21| (dB)"]},

@@ -96,10 +96,25 @@ function menuNames() {
     if (p.group && !groups.includes(p.group)) groups.push(p.group);
   }
   const iq = state.profiles[$("chip").value]?.output_path === "iq";
-  return [...groups, "Scale", "Marker", "Output", "Setup", ...(iq ? ["I/Q cal"] : [])];
+  const output = state.measurements[state.measurement].output_tone ? ["Output"] : [];
+  return [...groups, "Scale", "Marker", ...output, "Setup", ...(iq ? ["I/Q cal"] : [])];
+}
+
+// Measurements this chip's setup can run (e.g. RX I/Q calibration needs an I/Q return path).
+function renderMeasurementList() {
+  const profile = state.profiles[$("chip").value] ?? {};
+  const usable = Object.entries(state.measurements).filter(([, m]) =>
+    Object.entries(m.setup_requires).every(([key, value]) => profile[key] === value));
+  if (!usable.some(([k]) => k === state.measurement)) state.measurement = "resonator_sweep";
+  $("measurement").replaceChildren(...usable.map(([k, m]) => new Option(m.name, k)));
+  $("measurement").value = state.measurement;
+  const runKey = state.measurements[state.measurement].run_key;
+  $("run").textContent = runKey;
+  $("empty").textContent = `Choose a chip, set the measurement and press ${runKey}.`;
 }
 
 function renderMenus() {
+  renderMeasurementList();
   const names = menuNames();
   if (!names.includes(state.menu)) state.menu = names[0];
   $("menus").replaceChildren(...names.map((name) => {
@@ -121,7 +136,10 @@ function renderMenuBody() {
   else if (state.menu === "Output") body.replaceChildren(toneBlock(null),
     hint("Sends a tone on the chip's output path, for checking the setup with an oscilloscope or spectrum analyzer."));
   else {
-    const fields = Object.entries(state.schema.properties).filter(([, p]) => p.group === state.menu);
+    const saved = store.get(paramsKey(), {});
+    const applies = (p) => Object.entries(p.shown_when ?? {}).every(([key, value]) =>
+      paramValue(key, state.schema.properties[key], saved).value === value);
+    const fields = Object.entries(state.schema.properties).filter(([, p]) => p.group === state.menu && applies(p));
     body.replaceChildren(...fields.map(([key, p]) => paramField(key, p)));
   }
   applyControl();
@@ -159,6 +177,7 @@ function paramField(key, p) {
     const params = store.get(paramsKey(), {});
     params[key] = input.value === "" ? undefined : p.enum ? input.value : Number(input.value);
     store.set(paramsKey(), params);
+    if (p.enum) renderMenuBody();  // a mode change shows that mode's fields
   };
   return field(p.title, input, p.unit, fromChip ? "From the chip parameters." : p.description);
 }
@@ -322,10 +341,9 @@ function hint(text) {
 // [key, title, kind, unit, hint, shown only for this output path, or in the "I/Q cal" menu]
 const PROFILE_FIELDS = [
   ["chip", "Chip name", "text"],
-  ["chip_type", "Chip type", ["transmon", "fluxonium"]],
   ["lo_mhz", "LO frequency", "number", "MHz", "Leave empty when there is no mixer (RF = IF)."],
-  ["lo_power_dbm", "LO power", "number", "dBm", "Set on the LO when the app controls it (started with --lo). The MMIQ wants about 13–15 dBm."],
-  ["sideband", "Sideband", ["upper", "lower"], null, "Upper: RF = LO + IF. Lower: RF = LO − IF."],
+  ["lo_power_dbm", "LO power", "number", "dBm", "Set on the LO when the app controls it (started with --lo). The MMIQ wants about 13–15 dBm.", "lo"],
+  ["sideband", "Sideband", ["upper", "lower"], null, "Upper: RF = LO + IF. Lower: RF = LO − IF.", "lo"],
   ["output_path", "Output path", ["real", "iq"], null, "I/Q: the tone goes out on two DACs into an I/Q mixer."],
   ["readout_dac", "Readout output", ["DAC_A", "DAC_B"], null, null, "real"],
   ["i_dac", "I output", ["DAC_A", "DAC_B"], null, null, "iq"],
@@ -334,6 +352,8 @@ const PROFILE_FIELDS = [
   ["iq_gain_ratio", "Q / I gain", "number", null, "1 for an ideal mixer.", "I/Q cal"],
   ["electrical_delay_ns", "Electrical delay", "number", "ns",
     "Subtracted from the resonator sweep's phase. Empty: fitted on each sweep. Store it from a wide sweep (Marker menu)."],
+  ["time_of_flight_us", "Time of flight", "number", "µs",
+    "From the trigger to when the signal reaches the ADC; the readout window opens this late."],
   ["control_dac", "Control line", ["", "DAC_A", "DAC_B"], null,
     "A DAC of its own for the qubit tone, with no mixer: the qubit frequency is the DAC frequency."],
   ["return_path", "Return path", ["real", "iq"], null, "I/Q: an I/Q mixer into two ADCs, combined in software."],
@@ -344,11 +364,11 @@ const PROFILE_FIELDS = [
   ["rx_phase_deg", "RX Q phase", "number", "°", "0 for an ideal mixer.", "return:iq"],
   ["rx_delay_ps", "RX I/Q delay", "number", "ps", "About 48 ps per cm of I/Q cable difference.", "return:iq"],
 ];
-const NUMBER_FIELDS = ["lo_power_dbm", "iq_phase_deg", "iq_gain_ratio", "rx_gain_ratio", "rx_phase_deg", "rx_delay_ps"];
+const NUMBER_FIELDS = ["lo_power_dbm", "time_of_flight_us", "iq_phase_deg", "iq_gain_ratio", "rx_gain_ratio", "rx_phase_deg", "rx_delay_ps"];
 
-const NEW_PROFILE = { chip: "", chip_type: "transmon", lo_mhz: null, lo_power_dbm: 13, sideband: "upper", output_path: "real",
+const NEW_PROFILE = { chip: "", lo_mhz: null, lo_power_dbm: 13, sideband: "upper", output_path: "real",
   readout_dac: "DAC_B", i_dac: "DAC_A", q_dac: "DAC_B", iq_phase_deg: 90, iq_gain_ratio: 1, readout_adc: "ADC_D",
-  electrical_delay_ns: null, control_dac: null, return_path: "real", i_adc: "ADC_D", q_adc: "ADC_C", rx_gain_ratio: 1, rx_phase_deg: 0, rx_delay_ps: 0 };
+  electrical_delay_ns: null, time_of_flight_us: 0.3, control_dac: null, return_path: "real", i_adc: "ADC_D", q_adc: "ADC_C", rx_gain_ratio: 1, rx_phase_deg: 0, rx_delay_ps: 0 };
 
 // The Setup and I/Q cal menus edit the same profile; each shows its own fields and saves all of them.
 function setupMenu(menu) {
@@ -370,15 +390,18 @@ function setupMenu(menu) {
     rows[key].dataset.onlyFor = onlyFor || "";
     return rows[key];
   });
-  // onlyFor: "I/Q cal" (that menu only), "real"/"iq" (output path), "return:real"/"return:iq" (return path)
+  // onlyFor: "I/Q cal" (that menu only), "real"/"iq" (output path), "return:real"/"return:iq" (return path),
+  // "lo" (only with an LO frequency)
   const shown = (only) => {
     if (menu === "I/Q cal") return only === "I/Q cal";
     if (!only) return true;
+    if (only === "lo") return controls.lo_mhz.value !== "";
     if (only.startsWith("return:")) return only.slice(7) === controls.return_path.value;
     return only === controls.output_path.value;
   };
   const showFields = () => { for (const row of Object.values(rows)) row.hidden = !shown(row.dataset.onlyFor); };
   controls.output_path.onchange = showFields;
+  controls.lo_mhz.oninput = showFields;
   controls.return_path.onchange = showFields;
   showFields();
   controls.iq_phase_deg.step = "0.1";
@@ -687,9 +710,7 @@ async function main() {
 
   state.measurements = await api("GET", "/api/measurements");
   if (!state.measurements[state.measurement]) state.measurement = "resonator_sweep";
-  const select = $("measurement");
-  select.replaceChildren(...Object.entries(state.measurements).map(([k, m]) => new Option(m.name, k)));
-  select.value = state.measurement;
+  const select = $("measurement");  // its options depend on the chip; renderMenus() fills them
   select.onchange = () => {
     state.measurement = select.value; store.set("measurement", select.value);
     if (!state.data) { buildPlots(state.measurement); traceLines(); }

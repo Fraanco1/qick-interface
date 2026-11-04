@@ -19,14 +19,16 @@ class ResonatorSweepParams(BaseModel):
     gain: float = Field(0.5, ge=0, le=1, title="Gain", json_schema_extra={"group": "Power"})
     mode: Literal["pulsed", "cw"] = Field("pulsed", title="Mode", json_schema_extra={"group": "Timing"},
                                          description="CW keeps the tone on, like a PNA-X; pulsed sends one pulse per shot.")
-    settle_us: float = Field(10.0, ge=0, le=1000, title="Settling time (CW)", json_schema_extra={"unit": "µs", "group": "Timing"},
+    settle_us: float = Field(10.0, ge=0, le=1000, title="Settling time",
+                             json_schema_extra={"unit": "µs", "group": "Timing", "shown_when": {"mode": "cw"}},
                              description="Wait after each frequency step before measuring; a few times the resonator's 1/κ.")
-    pulse_length_us: float = Field(2.0, gt=0, le=100, title="Pulse length (pulsed)", json_schema_extra={"unit": "µs", "group": "Timing"})
+    pulse_length_us: float = Field(2.0, gt=0, le=100, title="Pulse length",
+                                   json_schema_extra={"unit": "µs", "group": "Timing", "shown_when": {"mode": "pulsed"}})
     readout_length_us: float = Field(1.5, gt=0, le=100, title="Readout window", json_schema_extra={"unit": "µs", "group": "Timing"})
-    trigger_delay_us: float = Field(0.3, ge=0, title="Time of flight", json_schema_extra={"unit": "µs", "group": "Timing"})
     averages: int = Field(100, ge=1, title="Averages per round", json_schema_extra={"group": "Average"})
     rounds: int = Field(10, ge=1, title="Rounds", json_schema_extra={"group": "Average"})
-    final_delay_us: float = Field(1.0, ge=0, title="Repetition delay (pulsed)", json_schema_extra={"unit": "µs", "group": "Timing"})
+    final_delay_us: float = Field(1.0, ge=0, title="Repetition delay",
+                                  json_schema_extra={"unit": "µs", "group": "Timing", "shown_when": {"mode": "pulsed"}})
 
 
 class _Program(TonesMixin, AveragerProgramV2):
@@ -84,7 +86,7 @@ class ResonatorSweep:
             "cw": params.mode == "cw",
             "settle": params.settle_us,
             "readout_length": params.readout_length_us,
-            "trigger_delay": params.trigger_delay_us,
+            "trigger_delay": profile.time_of_flight_us,
         }
         # in CW the tone never stops, so a repetition delay would only slow the sweep down
         final_delay = 0.05 if params.mode == "cw" else params.final_delay_us

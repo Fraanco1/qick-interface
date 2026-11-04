@@ -22,6 +22,7 @@ class RxIqCalParams(ResonatorSweepParams):
 
 class RxIqCal:
     name = "RX I/Q calibration"
+    setup_requires = {"return_path": "iq"}  # listed only for chips whose setup has these values
     Params = RxIqCalParams
     x_axis = {"title": "Frequency", "unit": "MHz"}
     plots = [{"title": "Q/I gain", "unit": "dB", "traces": ["Q/I gain (dB)", "Gain fit (dB)"]},

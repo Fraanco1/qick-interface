@@ -9,7 +9,7 @@ from qick_interface.measurements.cw_time import CwTime, CwTimeParams
 from qick_interface.profiles import SetupProfile
 
 SOCCFG = QickConfig(str(Path(__file__).parent / "fixtures" / "soccfg_rfsoc4x2.json"))
-PROFILE = SetupProfile(chip="Test chip", chip_type="transmon", lo_mhz=6000.0, sideband="upper")
+PROFILE = SetupProfile(chip="Test chip", lo_mhz=6000.0, sideband="upper")
 
 
 def sweeps_numbered():

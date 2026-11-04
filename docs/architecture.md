@@ -64,6 +64,7 @@ Each measurement is one Python class that declares:
 - parameters as a pydantic model with units, limits, soft-key group, and the chip parameter a field starts from (FastAPI exposes its JSON schema; the page builds the form from it),
 - its x axis and plots (which traces share a plot, with units),
 - the chip parameter its marker can be stored as, and which fit results can be stored (`marker_sets`, `info_sets`),
+- what the page offers with it: the Output menu, the run key's label, and which setups can run it (`output_tone`, `run_key`, `setup_requires`),
 - `run(board, profile, params, should_stop)`, which yields `Update`s (x, traces, raw data to save, fit results).
 
 Adding a measurement never requires web code. CW Time starts the tone once and triggers readout windows at a fixed spacing, 50 ns apart (the readout's dead time); each round of its program is one sweep. The resonator sweep compiles one tProc program that sweeps generator and readout frequency together (dynamic readout, frequency-matched with `ro_ch`/`gen_ch`) and removes the fitted electrical delay from the phase.

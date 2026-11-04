@@ -9,8 +9,13 @@ from qick_interface.measurements.two_tone import TwoTone, TwoToneParams
 from qick_interface.profiles import SetupProfile
 
 SOCCFG = QickConfig(str(Path(__file__).parent / "fixtures" / "soccfg_rfsoc4x2.json"))
-TRANSMON = SetupProfile(chip="Transmon A", chip_type="transmon", lo_mhz=6800.0, output_path="iq",
+TRANSMON = SetupProfile(chip="Transmon A", lo_mhz=6800.0, output_path="iq",
                         i_dac="DAC_A", q_dac="DAC_B")
+
+
+def window_start_us(program):
+    """When the readout window opens in the program's timeline (its trigger time), in µs."""
+    return next(m.t for m in program.macro_list if type(m).__name__ == "Trigger" and m.ros)
 
 
 def qubit_at(qubit_if_mhz, width_mhz=1.0):
@@ -32,7 +37,7 @@ def test_dip_appears_at_the_qubit_rf_frequency():
     assert [u.round for u in updates] == [1, 2]
 
 
-FLUXONIUM = SetupProfile(chip="Fluxonium A", chip_type="fluxonium", lo_mhz=6800.0, readout_dac="DAC_B",
+FLUXONIUM = SetupProfile(chip="Fluxonium A", lo_mhz=6800.0, readout_dac="DAC_B",
                          control_dac="DAC_A")
 
 
@@ -52,3 +57,15 @@ def test_control_line_sends_the_qubit_tone_straight_from_its_own_dac():
     assert p.pulses["readout"].gen_chs == [0]  # DAC_B: the readout line, through the LO
     assert abs(last.x[np.argmin(last.traces["|S21| (dB)"])] - 500.0) < 1.0  # RF = DAC frequency
     assert p.get_pulse_param("readout", "freq") == pytest.approx(200.0, abs=1e-3)
+
+
+def test_the_window_opens_after_the_setups_time_of_flight():
+    programs = []
+
+    def capture(program):
+        programs.append(program)
+        return qubit_at(3250.0)(program)
+
+    list(TwoTone.run(FakeBoard(SOCCFG, capture), TRANSMON.model_copy(update={"time_of_flight_us": 0.45}), TwoToneParams(qubit_start_mhz=9900.0, qubit_stop_mhz=10200.0, points=11, readout_freq_mhz=7000.0, rounds=1)))
+
+    assert window_start_us(programs[0]) == pytest.approx(0.45, abs=0.002)

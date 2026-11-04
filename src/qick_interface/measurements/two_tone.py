@@ -26,7 +26,6 @@ class TwoToneParams(BaseModel):
     readout_gain: float = _f(0.5, group="Readout", chip="readout_gain", ge=0, le=1, title="Readout gain")
     readout_pulse_us: float = _f(2.0, group="Readout", unit="µs", gt=0, le=100, title="Readout pulse length")
     readout_length_us: float = _f(1.5, group="Readout", unit="µs", gt=0, le=100, title="Readout window")
-    trigger_delay_us: float = _f(0.3, group="Readout", unit="µs", ge=0, title="Time of flight")
     averages: int = _f(100, group="Average", ge=1, title="Averages per round")
     rounds: int = _f(10, group="Average", ge=1, title="Rounds")
     final_delay_us: float = _f(50.0, group="Average", unit="µs", ge=0, title="Repetition delay")
@@ -53,6 +52,7 @@ class _Program(TonesMixin, AveragerProgramV2):
 
 class TwoTone:
     name = "Two-tone spectroscopy"
+    output_tone = True  # the Output menu: a pulse train with a PMOD0_0 marker, to check pulses on a scope
     Params = TwoToneParams
     x_axis = {"title": "Qubit frequency", "unit": "MHz"}
     marker_sets = "qubit_freq_mhz"  # chip parameter the marker can be stored as
@@ -82,7 +82,7 @@ class TwoTone:
             "readout_gain": params.readout_gain,
             "readout_pulse": params.readout_pulse_us,
             "readout_length": params.readout_length_us,
-            "trigger_delay": params.trigger_delay_us,
+            "trigger_delay": profile.time_of_flight_us,
         })
         qubit_if = cls.qubit_if_axis(program)
         rf = drive_rf_from_if(profile, qubit_if)

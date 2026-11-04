@@ -15,7 +15,7 @@ from qick_interface.measurements.resonator_sweep import ResonatorSweep, Resonato
 from qick_interface.profiles import SetupProfile
 
 runs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
-profile = SetupProfile(chip="Splitter", chip_type="transmon", lo_mhz=None, readout_dac="DAC_B",
+profile = SetupProfile(chip="Splitter", lo_mhz=None, readout_dac="DAC_B",
                        return_path="iq", i_adc="ADC_D", q_adc="ADC_C")
 params = ResonatorSweepParams(rf_start_mhz=100.0, rf_stop_mhz=1000.0, points=91, averages=200, rounds=1)
 

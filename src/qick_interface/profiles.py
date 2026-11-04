@@ -10,7 +10,6 @@ class SetupProfile(BaseModel):
     model_config = ConfigDict(extra="forbid")  # a typo in a saved profile must not be ignored
 
     chip: str
-    chip_type: Literal["transmon", "fluxonium"]
     lo_mhz: float | None = None  # None: no mixer, RF = IF
     lo_power_dbm: float = Field(13.0, ge=-110, le=18)  # set on the LO when the app controls it (--lo)
     sideband: Literal["upper", "lower"] = "upper"  # upper: RF = LO + IF
@@ -32,6 +31,16 @@ class SetupProfile(BaseModel):
     electrical_delay_ns: float | None = None
     # A separate line for the qubit tone, straight from its own DAC (no mixer: RF = DAC frequency)
     control_dac: Literal["DAC_A", "DAC_B"] | None = None
+    # From the trigger to when the tone reaches the ADC: cables, chip and the board's own latency
+    time_of_flight_us: float = Field(0.3, ge=0, le=10)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_removed_fields(cls, data):
+        """Profiles saved before Chip type was removed (2026-11-04) still load."""
+        if isinstance(data, dict):
+            data = {k: v for k, v in data.items() if k != "chip_type"}
+        return data
 
     @model_validator(mode="after")
     def _control_line_has_its_own_dac(self):
