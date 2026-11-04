@@ -141,6 +141,8 @@ self.add_pulse(ch=gen_ch, name="swept_pulse", style="flat_top", envelope="ramp",
 - **`reps`** is the hardware loop. It is the outermost loop by default, so slow drifts average out; `reps_innermost=True` flips this ([lib] asm_v2.py:2714–2718).
 - **`rounds`** is an argument of `acquire()`/`acquire_decimated()`. It reruns the whole program from Python and averages in software ("soft averages") ([lib] qick_asm.py:1905–1914, 2009–2010).
 - **Shot spacing.** `final_delay` is the gap after the last pulse or readout. `final_wait` (default 0) pauses execution until the readout ends, so the tProc does not run ahead of the buffers ([lib] asm_v2.py:2699–2713).
+- **Readout dead time (measured on the bench, 2026-11-04; firmware qick_4x2.bit, ro on ADC_D).** A trigger that arrives less than ~30 ns after the previous window ends is dropped, with no error. The shot counter still counts it, so the streamer reads buffer entries that were never written and returns stale data from earlier runs. With 0 ns gap, 113 of 201 results were fresh at 0.5 µs windows, 135 at 10 µs; 20 ns lost some at 0.5 µs; 30 ns and more lost none. CW Time leaves 50 ns.
+- **Data rate to the PC (measured, same day).** Each trigger returns 16 bytes. Over the USB link the PC receives about 8–11 MB/s, so windows shorter than ~2 µs are produced faster than they arrive. The board's timeline is unaffected (the streamer keeps up on the board; no data was lost down to 0.1 µs windows), but a round ends later. Measure timing with long windows, not from round periods at high data rates.
 
 ---
 

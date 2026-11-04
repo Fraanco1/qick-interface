@@ -44,16 +44,30 @@ for window, points, averages in [(0.5, 1001, 1), (1.5, 1001, 1), (10, 1001, 1), 
           f"|S21| {20 * np.log10(np.mean(np.abs(s21))):.2f} dB, point noise {noise_db:.4f} dB, "
           f"phase drift between sweeps {drift:.2f}°")
 
-# Timing: the slope of sweep period against points is the real time per point (the fixed transfer overhead
-# between sweeps cancels). It should equal averages x spacing; a late trigger on every shot would show here.
+# Stale data: a dropped trigger leaves a buffer entry unwritten and the previous run's value comes back.
+# Fill the buffer at gain 0.9, then measure at gain 0.1: every point must be at the new level.
+print()
+for window, points, averages in [(0.1, 10001, 10), (0.5, 1001, 1), (10, 1001, 1)]:
+    for gain in (0.9, 0.1):
+        sweeps = []
+        cw = CwTimeParams(freq_mhz=freq, points=points, readout_length_us=window, averages=averages, gain=gain)
+        for v in CwTime.run(board, profile, cw, should_stop=lambda: len(sweeps) >= 2):
+            sweeps.append(v)
+    s21 = np.abs(np.asarray(sweeps[-1].raw["s21"]))
+    stale = ~np.isclose(s21, np.median(s21), rtol=0.02)
+    print(f"stale check, window {window:4g} µs x {averages:2d} x {points:5d} points: {stale.sum()} of {s21.size} points off (want 0)")
+
+# Timing: the slope of sweep period against points is the real time per point (the fixed overhead between
+# sweeps cancels). It should equal the axis spacing; a late trigger on every shot would show here. Use long
+# windows: under ~2 µs the board makes data faster than the USB link carries it, and the slope measures the link.
 periods = {}
-for points in (2001, 10001):
-    cw = CwTimeParams(freq_mhz=freq, points=points, readout_length_us=1.0, averages=10)
+for points in (201, 1001):
+    cw = CwTimeParams(freq_mhz=freq, points=points, readout_length_us=10.0, averages=1)
     ends = []
     for v in CwTime.run(board, profile, cw, should_stop=lambda: len(ends) >= 8):
         ends = v.raw["sweep_end_unix_s"]
     periods[points] = np.median(np.diff(ends[2:]))  # skip the first sweeps (program load)
-per_point_us = (periods[10001] - periods[2001]) / 8000 * 1e6
+per_point_us = (periods[1001] - periods[201]) / 800 * 1e6
 expected_us = (v.x[1] - v.x[0]) * {"µs": 1, "ms": 1e3, "s": 1e6}[v.x_axis["unit"]]
-print(f"\nCW Time timing: {per_point_us:.4f} µs per point measured, {expected_us:.4f} µs expected "
-      f"(sweep periods {periods[2001] * 1e3:.1f} and {periods[10001] * 1e3:.1f} ms)")
+print(f"\nCW Time timing: {per_point_us:.3f} µs per point measured, {expected_us:.3f} µs expected "
+      f"(sweep periods {periods[201] * 1e3:.1f} and {periods[1001] * 1e3:.1f} ms)")

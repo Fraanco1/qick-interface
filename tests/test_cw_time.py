@@ -38,10 +38,10 @@ def test_x_axis_is_the_time_of_each_point():
 
     assert u.x_axis == {"title": "Time", "unit": "µs"}
     assert u.x[0] == 0
-    assert np.diff(u.x) == pytest.approx(6.0, abs=0.01)  # 3 back-to-back windows of 2 µs per point
+    assert np.diff(u.x) == pytest.approx(6.15, abs=0.01)  # 3 windows of 2 µs, each followed by a 50 ns gap
 
 
-def test_windows_never_overlap_and_the_axis_uses_the_spacing_the_board_plays():
+def test_windows_leave_the_readout_its_dead_time_and_the_axis_uses_the_spacing_the_board_plays():
     programs = []
 
     def capture(program):
@@ -53,7 +53,8 @@ def test_windows_never_overlap_and_the_axis_uses_the_spacing_the_board_plays():
     window = SOCCFG.cycles2us(SOCCFG.us2cycles(1.2345, ro_ch=0), ro_ch=0)  # as QICK rounds the readout
     tproc_cycle = 1 / SOCCFG["tprocs"][0]["f_time"]
     spacing = programs[0].cfg["spacing"]
-    assert window <= spacing < window + tproc_cycle
+    # back to back (gap < 30 ns) the readout drops triggers and stale buffer entries come back (bench, 2026-11-04)
+    assert window + 0.05 <= spacing < window + 0.05 + tproc_cycle
     assert spacing / tproc_cycle == pytest.approx(round(spacing / tproc_cycle))  # a whole number of tProc cycles
     assert np.diff(u.x) == pytest.approx(spacing)
 
@@ -62,7 +63,7 @@ def test_long_sweeps_are_shown_in_ms():
     u = run_until(1, sweeps_numbered(), points=1001, readout_length_us=10.0)[0]
 
     assert u.x_axis["unit"] == "ms"
-    assert u.x[-1] == pytest.approx(10.0, abs=0.01)
+    assert u.x[-1] == pytest.approx(10.05, abs=0.01)  # 1000 spacings of 10 µs + 50 ns
 
 
 def test_runs_until_stopped_showing_each_sweep_and_saving_all_of_them():

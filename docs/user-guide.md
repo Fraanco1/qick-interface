@@ -120,11 +120,11 @@ Measurement: **CW Time**. Like the PNA-X sweep type of the same name: the tone s
 | Sweep | Frequency (RF, MHz; starts from the chip's readout frequency), Points |
 | Power | Gain |
 | Timing | Readout window, Settling time (after the tone starts, before the first point) |
-| Average | Averages per point (back-to-back windows averaged into one point) |
+| Average | Averages per point (consecutive windows averaged into one point) |
 
-- **Time per point** = readout window × averages per point (the window is rounded up to the board's 1.6 ns clock, so the windows never overlap); the x axis runs from 0 to (points − 1) × that, in µs, ms or s. The settling time counts from when the tone starts.
+- **Time per point** = (readout window + 50 ns) × averages per point. The readout needs a short gap after each window, and the spacing is rounded up to the board's 1.6 ns clock. The x axis runs from 0 to (points − 1) × that, in µs, ms or s. The settling time counts from when the tone starts.
 - **Noise:** the readout window plays the role of the PNA-X's IF bandwidth (IF BW ≈ 1 / window): 10 µs is like 100 kHz, 100 µs like 10 kHz. For less noise than a 100 µs window gives, raise **Averages per point**.
-- Points within a sweep are exactly spaced by the board's clock. Between sweeps there is a short gap while the data travels to the PC, as on a PNA-X.
+- Points within a sweep are exactly spaced by the board's clock. Between sweeps there is a short gap while the data travels to the PC, as on a PNA-X. Below about 2 µs per window the board measures faster than the USB link carries the data (16 bytes per window, about 8–11 MB/s), so that gap grows; the time axis within each sweep stays correct.
 - The status bar counts **Sweep n**. When you press **Stop**, every sweep of the run is saved: `s21` has one row per sweep, and `sweep_end_unix_s` gives the time each sweep reached the PC. A long run uses about 16 bytes per point per sweep of memory on the lab PC until it is saved.
 
 ### 2. Two-tone spectroscopy

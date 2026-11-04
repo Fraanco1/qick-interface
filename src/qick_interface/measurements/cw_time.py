@@ -22,7 +22,7 @@ class CwTimeParams(BaseModel):
     points: int = _f(201, "Points", "Sweep", ge=2, le=10001)
     gain: float = _f(0.5, "Gain", "Power", ge=0, le=1)
     readout_length_us: float = _f(10.0, "Readout window", "Timing", "µs", ge=0.1, le=100,
-                                  description="Windows follow each other (gaps under 2 ns); a longer window averages more noise away.")
+                                  description="Windows follow each other with a 50 ns gap; a longer window averages more noise away.")
     settle_us: float = _f(10.0, "Settling time", "Timing", "µs", ge=0, le=1000,
                           description="Wait after the tone starts, before the first point of each sweep.")
     averages: int = _f(1, "Averages per point", "Average", ge=1, le=1000,
@@ -45,7 +45,7 @@ class _Program(TonesMixin, AveragerProgramV2):
 
     def _body(self, cfg):
         self.read(cfg, t=0)
-        self.delay(t=cfg["spacing"])  # the next window opens as this one closes
+        self.delay(t=cfg["spacing"])  # the next window opens after the readout's dead time
 
 
 class CwTime:
@@ -88,12 +88,18 @@ class CwTime:
                          raw={"s21": sweeps, "sweep_end_unix_s": ends}, x_axis=x_axis)
 
 
+# A trigger that comes less than ~30 ns after the previous window ends is dropped by the readout, without
+# any error: fewer results are written than shots counted, and the rest of the buffer is read back stale.
+# Measured on the bench (2026-11-04): 20 ns lost triggers, 30 ns did not; 50 ns leaves a margin.
+READOUT_GAP_US = 0.05
+
+
 def _spacing(soccfg, ro: int, window_us: float) -> float:
     """Time from one window to the next, in µs: the window as the readout rounds it (its own clock),
-    rounded up to whole tProc cycles, so windows never overlap and gaps stay under one cycle (1.6 ns)."""
+    plus the readout's dead time, rounded up to whole tProc cycles."""
     window = soccfg.cycles2us(soccfg.us2cycles(window_us, ro_ch=ro), ro_ch=ro)
     f_tproc = soccfg["tprocs"][0]["f_time"]
-    return np.ceil(window * f_tproc - 1e-6) / f_tproc
+    return np.ceil((window + READOUT_GAP_US) * f_tproc - 1e-6) / f_tproc
 
 
 def _time_axis(points: int, point_time_us: float):
