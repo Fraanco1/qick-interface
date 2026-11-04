@@ -16,6 +16,7 @@ qick-interface/
 │   ├── measurements/
 │   │   ├── base.py             # what a measurement produces (Update)
 │   │   ├── resonator_sweep.py
+│   │   ├── cw_time.py          # S21 against time at one frequency, until Stop
 │   │   ├── two_tone.py
 │   │   └── rabi.py             # amplitude or length, damped-cosine fit
 │   ├── session.py              # controller/viewers, one worker, live updates
@@ -33,7 +34,7 @@ qick-interface/
 
 The only module that touches hardware; Pyro4 never appears outside it.
 
-- Interface: `soccfg`, and `run(program, rounds, should_stop)`, which yields the running average I/Q after each round.
+- Interface: `soccfg`, and `run(program, rounds, should_stop, average=True)`, which yields the running average I/Q after each round; `average=False` yields each round on its own and keeps none in memory, and `rounds=None` repeats until stopped (CW Time).
 - Hides: building the Pyro4 proxy without IPython, QICK version check (PC and board must match), `step_rounds` round-by-round acquisition, safe stop (`stop_tproc`, `stop_readout`, `reset_gens`), finite timeouts on every poll, board-side tracebacks.
 - Interface also has `play(program)` / `silence()` for the I/Q calibration tone.
 - Adapters: `QickBoard` (real board over Pyro4) and `FakeBoard` (computes a simulated response from the compiled program; used by tests and `--fake` mode).
@@ -63,7 +64,7 @@ Each measurement is one Python class that declares:
 - the chip parameter its marker can be stored as, and which fit results can be stored (`marker_sets`, `info_sets`),
 - `run(board, profile, params, should_stop)`, which yields `Update`s (x, traces, raw data to save, fit results).
 
-Adding a measurement never requires web code. The resonator sweep compiles one tProc program that sweeps generator and readout frequency together (dynamic readout, frequency-matched with `ro_ch`/`gen_ch`) and removes the fitted electrical delay from the phase.
+Adding a measurement never requires web code. CW Time starts the tone once and triggers readout windows back to back at a fixed spacing; each round of its program is one sweep. The resonator sweep compiles one tProc program that sweeps generator and readout frequency together (dynamic readout, frequency-matched with `ro_ch`/`gen_ch`) and removes the fitted electrical delay from the phase.
 
 ### Session (`session.py`)
 

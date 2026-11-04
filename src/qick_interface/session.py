@@ -111,7 +111,7 @@ class Session:
 
     def _run(self, key, m, profile, params) -> None:
         self.broadcast({**self.state(), "running": True})
-        u = None
+        u, failed = None, False
         try:
             for u in m.run(self._board, profile, params, self._stop.is_set):
                 self.last_update = {"type": "update", "measurement": key, "chip": profile.chip,
@@ -120,16 +120,19 @@ class Session:
                                     "x_axis": u.x_axis or m.x_axis, "info": u.info}
                 self.broadcast(self.last_update)
         except Exception as e:
+            failed = True
             self.broadcast({"type": "error", "message": str(e)})
         finally:
             if u is not None:
-                self._save(key, profile, params, u)
+                # a continuous run (rounds=None) ends normally when stopped
+                completed = not failed and (u.rounds is None or u.round == u.rounds)
+                self._save(key, profile, params, u, completed)
             self._worker = None
             self.broadcast(self.state())
 
-    def _save(self, key, profile, params, u) -> None:
+    def _save(self, key, profile, params, u, completed: bool) -> None:
         try:
-            rel = save_run(self._data_dir, key, profile, params, u, completed=u.round == u.rounds)
+            rel = save_run(self._data_dir, key, profile, params, u, completed=completed)
             self.broadcast({"type": "saved", "file": rel})
         except Exception as e:
             self.broadcast({"type": "error", "message": f"Could not save the run: {e}"})

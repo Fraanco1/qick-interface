@@ -92,6 +92,18 @@ _Avoid_: control tone, drive tone, pump
 A measurement of S21 (magnitude and phase of transmission) against readout tone frequency.
 _Avoid_: VNA sweep, spectroscopy (alone), S21 scan
 
+**CW Time**:
+A measurement of S21 against time at one fixed readout tone frequency, repeated sweep after sweep until stopped; named after the PNA-X sweep type.
+_Avoid_: time trace, stream, monitor
+
+**Sweep** (in CW Time):
+One pass of CW Time over its points; the screen redraws on each sweep, and the run saves every one.
+_Avoid_: round (a round is one pass of averaging in the other measurements), frame
+
+**Readout window**:
+The time over which the board averages the returned signal into one I/Q value; the app's equivalent of the PNA-X's IF bandwidth (IF BW ≈ 1 / window).
+_Avoid_: IF bandwidth, integration time, acquisition length
+
 **Two-tone spectroscopy**:
 A measurement that sweeps the qubit tone frequency while reading out at a fixed resonator frequency.
 _Avoid_: qubit spectroscopy, pump-probe

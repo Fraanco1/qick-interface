@@ -90,3 +90,35 @@ def test_cw_mode_keeps_the_tone_on_and_still_finds_the_resonance():
     last = updates[-1]
     assert abs(last.x[np.argmin(last.traces["|S21| (dB)"])] - 6150.0) < 0.5
     assert programs[0].pulses["probe"].params["mode"] == "periodic"
+
+
+def chip_seen_by_the_board(profile, gain_scales=True):
+    """A notch at RF 6150 MHz as the board receives it: scaled by the tone's gain, and on the
+    lower sideband (RF = LO − IF) with its phase mirrored, as a real mixer delivers it."""
+    def response(rf):
+        return 1 - 0.9 / (1 + 2j * (rf - 6150.0) / 2.0)
+
+    def simulate(program):
+        f = ResonatorSweep.if_axis(program)
+        lower = profile.sideband == "lower"
+        seen = response(profile.lo_mhz - f if lower else profile.lo_mhz + f)
+        seen = np.conj(seen) if lower else seen
+        return [seen * (program.get_pulse_param("probe", "gain") if gain_scales else 1)]
+    return response, simulate
+
+
+def test_s21_does_not_change_with_the_gain():
+    _, simulate = chip_seen_by_the_board(PROFILE)
+    low, high = (run(FakeBoard(SOCCFG, simulate), gain=g, rounds=1)[-1].raw["s21"] for g in (0.25, 0.5))
+
+    assert np.abs(low) == pytest.approx(np.abs(high), rel=1e-3)
+
+
+def test_lower_sideband_shows_the_chip_phase_not_its_mirror_image():
+    lower = SetupProfile(chip="Test chip", chip_type="transmon", lo_mhz=6300.0, sideband="lower")
+    response, simulate = chip_seen_by_the_board(lower)
+    params = ResonatorSweepParams(rf_start_mhz=6100.0, rf_stop_mhz=6200.0, points=401, gain=1.0, rounds=1)
+
+    u = list(ResonatorSweep.run(FakeBoard(SOCCFG, simulate), lower, params))[-1]
+
+    assert u.raw["s21"] == pytest.approx(response(u.x), abs=1e-3)

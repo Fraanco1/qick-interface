@@ -25,7 +25,7 @@ browser ──REST──▶ server.py ──▶ session.py ──worker thread�
                                                                       └─ board.run(program)      QickBoard | FakeBoard
 ```
 
-- **`board.py`** is the only module that touches QICK hardware. `QickBoard` talks to the board over Pyro4; `FakeBoard` takes a function that computes a simulated response from the compiled program. Both expose `soccfg`, `run(program, rounds, should_stop)` (yields the running average per readout after each round), `play(program)` (start without waiting, e.g. the output tone) and `silence()`.
+- **`board.py`** is the only module that touches QICK hardware. `QickBoard` talks to the board over Pyro4; `FakeBoard` takes a function that computes a simulated response from the compiled program. Both expose `soccfg`, `run(program, rounds, should_stop, average=True)` (yields the running average per readout after each round; `average=False` yields each round alone, `rounds=None` runs until stopped), `play(program)` (start without waiting, e.g. the output tone) and `silence()`.
   - `QickBoard` runs its own round loop instead of QICK's `finish_round`: every wait on the board is finite (`poll_data(timeout=1.0)`), and a round with no new data for `STALL_S` (30 s) fails with a clear error. QICK's loop waits forever, and a board-side call left waiting steals data from later runs, so they hang too. Keep this when upgrading QICK.
 - **`tone.py`** builds the output tone (continuous, or a pulse train with a PMOD0_0 marker), also used for I/Q calibration.
 - **`frequency.py`** is pure: RF ↔ IF for a setup profile, and the ADC/DAC limits.
@@ -79,6 +79,7 @@ Rules that keep data correct (details and sources in [research/qick.md](research
 - **Plan frequencies first:** convert RF to IF with `plan_sweep(profile, start, stop)`. Pass `drive_only=True` for tones the ADC never receives (e.g. a qubit tone).
 - **Read axes back from QICK:** use `program.get_pulse_param(name, param, as_array=True)`, which returns the values QICK rounded to, instead of recomputing them.
 - **Gain** is a fraction of full scale (0–1), times are in µs, and frequencies in MHz.
+- **Turn the readout's I/Q into S21 with `received_s21(iq, program, tone, profile)`** (`measurements/base.py`): it divides by the readout tone's gain and conjugates on the lower sideband, where a mixer mirrors the chip's phase.
 
 ### 3. The class
 
@@ -98,6 +99,8 @@ class MyMeasurement:
         for i, iq in enumerate(board.run(program, params.rounds, should_stop), start=1):
             yield Update(i, params.rounds, x, traces={...}, raw={"s21": iq[0]}, info={...})
 ```
+
+A measurement that runs until Stop (like `cw_time.py`) passes `rounds=None` to `board.run` and to its `Update`s; the page then shows "Sweep n", and Stop counts as a completed run.
 
 `Update` (in `measurements/base.py`) carries:
 - `x` and `traces`: what is plotted. A second trace in a plot is drawn as a dashed fit line.
@@ -121,7 +124,7 @@ Tests are written first (red, then green) and only at four agreed places:
 | Where | File | Catches | Misses |
 |---|---|---|---|
 | Frequency planning | `tests/test_frequency.py` | wiring and sideband mistakes, out-of-range IFs | QICK's frequency rounding |
-| Measurements on `FakeBoard` | `tests/test_resonator_sweep.py`, `test_two_tone.py`, `test_rabi.py` | the program compiles for this firmware, axes, processing, fits | real timing, Pyro4 |
+| Measurements on `FakeBoard` | `tests/test_resonator_sweep.py`, `test_cw_time.py`, `test_two_tone.py`, `test_rabi.py` | the program compiles for this firmware, axes, processing, fits | real timing, Pyro4 |
 | Server | `tests/test_server.py` | controller rules, schemas, live updates, saving, tone | how the page looks |
 | Real board | `scripts/hardware_sweep.py` (manual) | the whole chain on hardware | — |
 
@@ -187,4 +190,3 @@ WebSocket messages have a `type`:
 - Fluxonium control line (qubit tone on its own DAC) and flux bias, manual first, then a current source driver.
 - LO driver, once the LO is connected to the lab PC.
 - Viewers see the controller's frequency range only in the status bar, not in the form fields.
-- Manual y-scale setting (like a PNA "Scale" menu); the autoscale is sometimes roomier than needed.

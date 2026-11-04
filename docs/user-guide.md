@@ -7,8 +7,8 @@ How to measure a chip with QICK Analyzer. Words in *italics* are defined in the 
 Open `http://<lab-PC-address>:8080`.
 
 - **Title bar:** the *chip* being measured, the *measurement*, who controls the board, your name, and **Take control**.
-- **Screen:** two plot windows on a 10-division grid. The line above each window shows the trace, its scale per division and the reference (bottom) value, like a PNA-X.
-- **Soft keys** (right): menus with the measurement's settings, plus **Marker**, **Setup** and, for chips with an I/Q output, **I/Q cal**. **Run sweep** and **Stop** are at the bottom.
+- **Screen:** two plot windows on a 10-division grid. The line above each window shows the trace, its scale per division and the reference value (at the ▶ arrow), like a PNA-X.
+- **Soft keys** (right): menus with the measurement's settings, plus **Scale**, **Marker**, **Output**, **Setup** and, for chips with an I/Q output, **I/Q cal**. **Run sweep** and **Stop** are at the bottom.
 - **Status bar:** what is on screen (measurement, start, stop, points, round), the board state (**Hold**, **Measuring** or **Tone**), and messages. Errors show in red.
 
 On a phone the soft keys move under the screen.
@@ -81,10 +81,27 @@ Press **Run sweep**. The traces update after every round; **Stop** ends the run 
 
 On the bench loopback both modes give the same |S21| and phase (amplitude ratio 1.0000, phase within 0.4°). A longer readout window averages more noise away, like a lower IF bandwidth on the PNA-X.
 
-- **Tr1:** |S21| in dB, relative to the ADC's full scale (not calibrated to dBm).
-- **Tr2:** phase in degrees, with the cable's electrical delay fitted and removed, wrapped to ±180°.
+- **Tr1:** |S21| in dB. It is relative, not calibrated: the received signal in ADC units divided by the gain, so it does not move when you change the gain (like a PNA-X). The resonance's frequency, width, depth and Q are what it measures well; the absolute level includes the whole chain.
+  How it is computed, and what it can and can't be compared with: [How S21 is computed](s21.md).
+- **Tr2:** phase in degrees, with the cable's electrical delay fitted and removed, wrapped to ±180°. With the lower sideband (RF below the LO) the mixer mirrors the phase; the app undoes that, so the resonance turns the same way on either sideband.
 
 Then **Marker → Min** puts the marker on the dip, and **Marker → Readout frequency** stores it in the chip parameters.
+
+### CW Time: S21 against time
+
+Measurement: **CW Time**. Like the PNA-X sweep type of the same name: the tone stays on at one frequency and the screen shows |S21| and phase against time. It sweeps again and again until you press **Stop**, redrawing the trace from the left each time. Use it to watch drifts, switching or anything else that changes in time at the resonator.
+
+| Menu | Settings |
+|---|---|
+| Sweep | Frequency (RF, MHz; starts from the chip's readout frequency), Points |
+| Power | Gain |
+| Timing | Readout window, Settling time (after the tone starts, before the first point) |
+| Average | Averages per point (back-to-back windows averaged into one point) |
+
+- **Time per point** = readout window × averages per point (the window is rounded up to the board's 1.6 ns clock, so the windows never overlap); the x axis runs from 0 to (points − 1) × that, in µs, ms or s. The settling time counts from when the tone starts.
+- **Noise:** the readout window plays the role of the PNA-X's IF bandwidth (IF BW ≈ 1 / window): 10 µs is like 100 kHz, 100 µs like 10 kHz. For less noise than a 100 µs window gives, raise **Averages per point**.
+- Points within a sweep are exactly spaced by the board's clock. Between sweeps there is a short gap while the data travels to the PC, as on a PNA-X.
+- The status bar counts **Sweep n**. When you press **Stop**, every sweep of the run is saved: `s21` has one row per sweep, and `sweep_end_unix_s` gives the time each sweep reached the PC. A long run uses about 16 bytes per point per sweep of memory on the lab PC until it is saved.
 
 ### 2. Two-tone spectroscopy
 
@@ -122,9 +139,22 @@ When the fit explains the data, the screen shows the π-pulse (gain, or length i
 | Gain | 0–1, fraction of full DAC scale. |
 | Mode | **Continuous**, or **Pulsed**: a pulse train with **Pulse length** and **Period** in µs. |
 
-In pulsed mode, digital output **PMOD0_0** gives a short trigger at the start of every pulse; connect it to the oscilloscope's trigger input.
+In pulsed mode, digital output **PMOD0_0** is high while each pulse plays (same start and length); connect it to the oscilloscope's trigger input. It is 1.8 V logic: trigger at about 0.9 V. The RF pulse may appear shifted from the marker by the DAC's latency (tens to a few hundred ns); compare both on the scope.
 
 **Tone on** starts it; edits are applied immediately while it plays. The status bar shows **Tone** or **Pulses** and the frequency. **Tone off** or starting a run turns it off.
+
+## Scale
+
+**Scale** sets each trace window's y axis, like the PNA-X Scale key. It changes only your own screen; viewers set theirs.
+
+| Field | Meaning |
+|---|---|
+| Autoscale | **On:** the axis follows the data on every update. **Off (fixed):** the axis stays where you put it, so traces from different runs line up. |
+| Scale | Size of one division, e.g. 2 dB/div. |
+| Reference level | The value on the reference line, marked ▶ on the left edge. |
+| Reference position | Which division the reference line sits on: 0 = bottom, 10 = top, 5 = middle. |
+
+Switching Autoscale off keeps the current view; **Autoscale once** fits the current data and stays fixed. The trace line above each window shows the scale, the reference value and **Fixed** when it is not autoscaling. Settings are kept in your browser, per measurement.
 
 ## Markers
 
@@ -150,7 +180,7 @@ arrays = np.load(name + ".npz")
 meta = json.load(open(name + ".json"))
 
 freq_mhz = arrays["x"]
-s21 = arrays["s21"]                     # complex, in ADC units, cable delay not removed
+s21 = arrays["s21"]                     # complex: ADC units / gain, cable delay not removed
 mag_db = arrays["|S21| (dB)"]
 print(meta["params"], meta["profile"]["lo_mhz"])
 ```

@@ -9,7 +9,7 @@ from ..board import readout_channel
 from ..frequency import plan_sweep, rf_from_if
 from ..iq import TonesMixin, outputs
 from ..profiles import SetupProfile
-from .base import Update
+from .base import Update, received_s21
 
 
 def _f(default=..., group=None, unit=None, chip=None, **kw):
@@ -88,7 +88,7 @@ class TwoTone:
         rf = rf_from_if(profile, qubit_if)
 
         for i, iq in enumerate(board.run(program, params.rounds, should_stop), start=1):
-            s21 = iq[0]
+            s21 = received_s21(iq[0], program, "readout", profile)
             with np.errstate(divide="ignore"):  # no signal gives -inf dB, shown as a gap
                 mag_db = 20 * np.log10(np.abs(s21))
             # phase relative to the sweep's mean, so the qubit response stands out

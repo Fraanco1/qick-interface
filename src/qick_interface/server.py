@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 
 from .tone import OutputTone, tone_program
 from .frequency import FrequencyError
+from .measurements.cw_time import CwTime
 from .measurements.resonator_sweep import ResonatorSweep
 from .measurements.rabi import Rabi
 from .measurements.two_tone import TwoTone
@@ -17,7 +18,7 @@ from .profiles import ChipParameters, SetupProfile, load_parameters, load_profil
 from .session import Busy, NotController, Session
 
 STATIC = Path(__file__).parent / "static"
-MEASUREMENTS = {"resonator_sweep": ResonatorSweep, "two_tone": TwoTone, "rabi": Rabi}
+MEASUREMENTS = {"resonator_sweep": ResonatorSweep, "cw_time": CwTime, "two_tone": TwoTone, "rabi": Rabi}
 
 
 class RunRequest(BaseModel):

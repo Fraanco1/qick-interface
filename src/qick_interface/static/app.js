@@ -96,7 +96,7 @@ function menuNames() {
     if (p.group && !groups.includes(p.group)) groups.push(p.group);
   }
   const iq = state.profiles[$("chip").value]?.output_path === "iq";
-  return [...groups, "Marker", "Output", "Setup", ...(iq ? ["I/Q cal"] : [])];
+  return [...groups, "Scale", "Marker", "Output", "Setup", ...(iq ? ["I/Q cal"] : [])];
 }
 
 function renderMenus() {
@@ -115,6 +115,7 @@ function renderMenus() {
 function renderMenuBody() {
   const body = $("menu-body");
   if (state.menu === "Marker") body.replaceChildren(...markerMenu());
+  else if (state.menu === "Scale") body.replaceChildren(...scaleMenu());
   else if (state.menu === "Setup") body.replaceChildren(...setupMenu("Setup"));
   else if (state.menu === "I/Q cal") body.replaceChildren(...setupMenu("I/Q cal"));
   else if (state.menu === "Output") body.replaceChildren(toneBlock(null),
@@ -205,6 +206,57 @@ function markerMenu() {
     nodes.push(keep, hint(`Click on a trace to place the marker. ${label} is stored in the chip parameters.`));
   }
   return nodes;
+}
+
+// ---- Scale: like the PNA-X Scale hardkey. Display only, so per browser, per measurement and window. ----
+// Manual: Scale per division, Reference level, and the division it sits on (Reference position, 0 = bottom).
+const scaleKey = (k) => `scale.${state.data?.measurement ?? state.measurement}.${k}`;
+const scaleOf = (k) => store.get(scaleKey(k), { auto: true });
+
+function yRange(k, min, max) {
+  const s = scaleOf(k);
+  return s.auto ? tenDivisionRange(min, max) : [s.ref - s.pos * s.perDiv, s.ref + (10 - s.pos) * s.perDiv];
+}
+
+// Where the autoscale would put the data, as manual settings with the reference in the middle (PNA default).
+function fittedScale(k) {
+  const vals = (plots[k]?.data ?? []).slice(1).flat().filter(Number.isFinite);
+  if (!vals.length) return { auto: false, perDiv: 1, ref: 0, pos: 5 };
+  const [lo, hi] = tenDivisionRange(vals.reduce((a, b) => Math.min(a, b)), vals.reduce((a, b) => Math.max(a, b)));
+  return { auto: false, perDiv: (hi - lo) / 10, ref: lo + 5 * (hi - lo) / 10, pos: 5 };
+}
+
+function setScale(k, s) {
+  store.set(scaleKey(k), s);
+  if (plots[k]) plots[k].setData(plots[k].data);  // recomputes the y range
+  traceLines();
+}
+
+function scaleMenu() {
+  return plotDefs().flatMap((def, k) => {
+    const s = scaleOf(k), title = document.createElement("h3");
+    title.className = "subhead"; title.textContent = `Tr${k + 1} ${def.title}`;
+    const mode = document.createElement("select");
+    mode.append(new Option("On", "auto"), new Option("Off (fixed)", "fixed"));
+    mode.value = s.auto ? "auto" : "fixed";
+    mode.onchange = () => { setScale(k, mode.value === "auto" ? { ...s, auto: true } : fittedScale(k)); renderMenuBody(); };
+    const number = (key, check) => {
+      const input = document.createElement("input");
+      input.type = "number"; input.inputMode = "decimal"; input.step = "any"; input.disabled = s.auto;
+      input.value = s[key] === undefined ? "" : +(+s[key]).toPrecision(6);
+      input.onchange = () => {
+        const v = Number(input.value);
+        if (input.value === "" || !check(v)) { input.value = +(+s[key]).toPrecision(6); return; }
+        setScale(k, { ...scaleOf(k), [key]: v });  // fresh: other fields may have changed since
+      };
+      return input;
+    };
+    return [title, field("Autoscale", mode),
+      field("Scale", number("perDiv", (v) => v > 0), `${def.unit}/div`),
+      field("Reference level", number("ref", Number.isFinite), def.unit, "Value at the reference line (▶)."),
+      field("Reference position", number("pos", (v) => v >= 0 && v <= 10), "div", "0 = bottom, 10 = top."),
+      button("Autoscale once", () => { setScale(k, fittedScale(k)); renderMenuBody(); })];
+  });
 }
 
 const PARAMETER_LABELS = {
@@ -440,12 +492,12 @@ function buildPlots(measurement) {
   plotDefs(measurement).forEach((def, k) => {
     const el = $(k === 0 ? "plot-mag" : "plot-phase");
     plots[k]?.destroy();
-    plots[k] = makePlot(el, COLORS()[k], def.traces.length);
+    plots[k] = makePlot(el, COLORS()[k], def.traces.length, k);
   });
   plots.mag = plots[0]; plots.phase = plots[1];
 }
 
-function makePlot(el, color, nTraces) {
+function makePlot(el, color, nTraces, k) {
   const axis = { stroke: "#9aa1aa", grid: { stroke: "#3b4148", width: 1, dash: [2, 3] },
                  ticks: { show: false }, font: "12px " + getComputedStyle(document.body).fontFamily };
   const tenDivisions = (u, i, min, max) => Array.from({ length: 11 }, (_, k) => min + (k * (max - min)) / 10);
@@ -453,7 +505,7 @@ function makePlot(el, color, nTraces) {
     width: el.clientWidth, height: el.clientHeight,
     legend: { show: false },
     cursor: { sync: { key: "screen" }, points: { show: false }, drag: { x: false, y: false } },
-    scales: { x: { time: false }, y: { range: (u, min, max) => tenDivisionRange(min, max) } },
+    scales: { x: { time: false }, y: { range: (u, min, max) => yRange(k, min, max) } },
     axes: [
       { ...axis, splits: tenDivisions, size: 30, values: (u, vals) => {
           const every = u.width < 500 ? 5 : 2, div = (vals[10] - vals[0]) / 10;
@@ -464,7 +516,7 @@ function makePlot(el, color, nTraces) {
     ],
     series: [{}, { stroke: color, width: 1.5, points: { show: false } },
              ...(nTraces > 1 ? [{ stroke: "#ffffff", width: 1, dash: [6, 4], points: { show: false } }] : [])],
-    hooks: { draw: [(u) => drawMarker(u, color)], setScale: [() => traceLines()], ready: [(u) => u.over.addEventListener("click", () => setMarker(u.cursor.idx))] },
+    hooks: { draw: [(u) => drawMarker(u, color), (u) => drawReference(u, k, color)], setScale: [() => traceLines()], ready: [(u) => u.over.addEventListener("click", () => setMarker(u.cursor.idx))] },
   };
   return new uPlot(opts, [[], ...Array.from({ length: nTraces }, () => [])], el);
 }
@@ -479,6 +531,18 @@ function drawMarker(u, color) {
   ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx - r, cy - 1.7 * r); ctx.lineTo(cx + r, cy - 1.7 * r); ctx.closePath(); ctx.stroke();
   ctx.fillStyle = color; ctx.font = `${11 * devicePixelRatio}px sans-serif`; ctx.textAlign = "center";
   ctx.fillText("1", cx, cy - 2.2 * r);
+  ctx.restore();
+}
+
+// The PNA-X's reference arrow: ▶ on the left edge at the reference line.
+function drawReference(u, k, color) {
+  const s = scaleOf(k), y = u.scales.y;
+  if (y.min === undefined || y.min === null) return;
+  const pos = s.auto ? 5 : s.pos, cy = u.bbox.top + u.bbox.height * (1 - pos / 10), r = 5 * devicePixelRatio;
+  const ctx = u.ctx;
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.moveTo(u.bbox.left, cy - r); ctx.lineTo(u.bbox.left + 1.4 * r, cy); ctx.lineTo(u.bbox.left, cy + r); ctx.closePath(); ctx.fill();
   ctx.restore();
 }
 
@@ -522,7 +586,7 @@ function showUpdate(u) {
   $("st-start").textContent = `Start ${formatX(u.x[0])}`;
   $("st-stop").textContent = `Stop ${formatX(u.x[u.x.length - 1])}`;
   $("st-points").textContent = `${u.x.length} points`;
-  $("st-round").textContent = `Round ${u.round} of ${u.rounds}`;
+  $("st-round").textContent = u.rounds == null ? `Sweep ${u.round}` : `Round ${u.round} of ${u.rounds}`;
 }
 
 function traceLines() {
@@ -530,8 +594,9 @@ function traceLines() {
     const line = $(k === 0 ? "tr1-line" : "tr2-line"), label = `Tr${k + 1} ${def.title}`;
     const s = plots[k]?.scales.y;
     if (!state.data || s?.min === undefined || s.min === null) { line.textContent = label; return; }
-    const div = (s.max - s.min) / 10;
-    line.textContent = `${label}   ${+div.toPrecision(3)} ${def.unit}/div   Ref ${minus(s.min.toFixed(decimalsFor(div)))} ${def.unit}`;
+    const div = (s.max - s.min) / 10, sc = scaleOf(k), ref = sc.auto ? s.min + 5 * div : sc.ref;
+    const refText = minus(String(+ref.toFixed(decimalsFor(div) + 1)));
+    line.textContent = `${label}   ${+div.toPrecision(3)} ${def.unit}/div   Ref ${refText} ${def.unit}${sc.auto ? "" : "   Fixed"}`;
   });
 }
 

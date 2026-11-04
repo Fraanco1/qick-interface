@@ -12,7 +12,7 @@ from ..board import readout_channel
 from ..frequency import plan_sweep
 from ..iq import TonesMixin, outputs
 from ..profiles import SetupProfile
-from .base import Update
+from .base import Update, received_s21
 
 
 def _f(default=..., group=None, unit=None, chip=None, **kw):
@@ -104,7 +104,7 @@ class Rabi:
             x_axis, info_name = {"title": "Qubit pulse length", "unit": "µs"}, "π-pulse length (µs)"
 
         for i, iq in enumerate(board.run(program, params.rounds, should_stop), start=1):
-            s21 = iq[0]
+            s21 = received_s21(iq[0], program, "readout", profile)
             signal = _project(s21)
             fit, x_pi = _fit_damped_cosine(x, signal)
             phase = np.degrees(np.angle(s21 * np.exp(-1j * np.angle(np.mean(s21)))))

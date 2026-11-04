@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 from qick import QickConfig
@@ -217,6 +218,8 @@ def test_controller_sends_a_tone_on_a_real_output_to_check_it_on_a_scope(tmp_pat
         assert board.playing.get_pulse_param("tone", "freq") == pytest.approx(500.0, abs=0.001)
         if tone["mode"] == "pulsed":
             assert board.playing.get_pulse_param("tone", "length") == pytest.approx(2.0, abs=0.01)
+            marker = next(m for m in board.playing.macro_list if type(m).__name__ == "Trigger")
+            assert marker.width == pytest.approx(2.0)  # the PMOD0_0 marker lasts as long as the RF pulse
 
 
 def test_a_pulse_train_needs_a_period_longer_than_the_pulse(client):
@@ -225,3 +228,33 @@ def test_a_pulse_train_needs_a_period_longer_than_the_pulse(client):
     tone = {"chip": "Loopback", "rf_mhz": 500.0, "mode": "pulsed", "pulse_length_us": 5.0, "period_us": 4.0}
 
     assert client.post("/api/tone", json=tone, headers=as_client("alice")).status_code == 422
+
+
+def test_cw_time_runs_until_stopped_and_saves_every_sweep(tmp_path):
+    def flat_in_time(program):
+        return [np.full(program.cfg["points"], 0.5, complex)]
+
+    board = FakeBoard(SOCCFG, flat_in_time, round_time_s=0.02)
+    app = create_app(board, data_dir=tmp_path / "data", profiles_dir=tmp_path / "profiles")
+    with TestClient(app) as client:
+        client.post("/api/control", headers=as_client("alice"))
+        client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
+        cw_time = {"measurement": "cw_time", "chip": "Loopback", "params": {"freq_mhz": 150.0, "points": 51}}
+
+        with client.websocket_connect("/ws") as viewer:
+            client.post("/api/runs", json=cw_time, headers=as_client("alice"))
+            updates = 0
+            while updates < 3:
+                m = viewer.receive_json()
+                updates += m["type"] == "update"
+            assert m["rounds"] is None  # no fixed end: it runs until Stop
+            client.post("/api/runs/stop", headers=as_client("alice"))
+            messages = messages_until_idle(viewer, already_running=True)
+
+    saved = next(m for m in messages if m["type"] == "saved")
+    name = tmp_path / "data" / saved["file"]
+    meta = json.loads(name.with_suffix(".json").read_text())
+    sweeps = meta["rounds_done"]
+    assert sweeps >= 3
+    assert meta["completed"] is True  # Stop is how a continuous run ends
+    assert np.load(f"{name}.npz")["s21"].shape == (sweeps, 51)

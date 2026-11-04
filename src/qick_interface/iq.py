@@ -29,6 +29,12 @@ def outputs(soccfg, profile: SetupProfile) -> list[_Output]:
             _Output("_q", gen_channel(soccfg, profile.q_dac), r / max(1.0, r), sign * profile.iq_phase_deg)]
 
 
+def tone_gain(program, name: str):
+    """The gain a tone was asked for (0–1), as QICK rounded it, on either output path:
+    on the I/Q path the I pulse carries it scaled by its gain factor."""
+    return program.get_pulse_param(name, "gain", as_array=True) / program.cfg["outputs"][0].gain_factor
+
+
 class TonesMixin:
     """For AveragerProgramV2 subclasses: cfg["outputs"] holds the result of outputs()."""
 

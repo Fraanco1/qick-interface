@@ -113,7 +113,7 @@ button, input, select { font: inherit; color: inherit; }
   text-align: right;
 }
 .field select { text-align: left; }
-.field .unit { min-width: 2.2em; color: var(--ink-soft); }
+.field .unit { min-width: 2.2em; flex: none; white-space: nowrap; color: var(--ink-soft); }
 .field input:disabled, .field select:disabled { background: var(--bezel); color: var(--ink-soft); }
 .field input[aria-invalid="true"] { border-color: var(--stop); }
 .hint { font-size: 12px; color: var(--ink-soft); }
@@ -160,7 +160,8 @@ button, input, select { font: inherit; color: inherit; }
 
 /* ---- small screens: soft keys go under the display ---------------- */
 @media (max-width: 860px) {
-  .instrument { grid-template-columns: 1fr; grid-template-rows: minmax(420px, 60vh) auto auto; padding: 8px 16px; }
+  html, body { height: auto; }  /* the page scrolls instead of squeezing the soft keys under the status bar */
+  .instrument { flex: none; grid-template-columns: 1fr; grid-template-rows: minmax(420px, 60vh) auto auto; padding: 8px 16px; }
   .titlebar { gap: 8px 12px; }
   .spacer { display: none; }
   .menu-body { flex: none; overflow: visible; }

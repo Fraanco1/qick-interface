@@ -1,9 +1,11 @@
 """Board: the only module that talks to QICK hardware.
 
-A Board exposes `soccfg` (to compile programs) and `run(program, rounds, should_stop)`,
-which yields, after each round, the running average for each readout of the program
-as complex arrays shaped like the program's loops.
+A Board exposes `soccfg` (to compile programs) and `run(program, rounds, should_stop, average)`,
+which yields, after each round, one complex array per readout of the program, shaped like the
+program's loops: the running average over the rounds so far, or with average=False that round
+alone. rounds=None repeats until should_stop() says so.
 """
+import itertools
 import time
 from collections.abc import Callable, Iterator
 
@@ -28,14 +30,14 @@ class FakeBoard:
     def silence(self) -> None:
         self.playing = None
 
-    def run(self, program, rounds: int, should_stop: Callable[[], bool] = lambda: False
-            ) -> Iterator[list[np.ndarray]]:
+    def run(self, program, rounds: int | None, should_stop: Callable[[], bool] = lambda: False,
+            average: bool = True) -> Iterator[list[np.ndarray]]:
         result = self._simulate(program)
-        for _ in range(rounds):
-            if should_stop():
+        for done in itertools.count(1):
+            if should_stop() or (rounds is not None and done > rounds):
                 return
             time.sleep(self._round_time_s)
-            yield result
+            yield result if average or done == 1 else self._simulate(program)
 
 
 class QickBoard:
@@ -54,14 +56,18 @@ class QickBoard:
             raise RuntimeError(f"QICK version mismatch: board {self.soccfg['sw_version']}, "
                                f"PC {qick.__version__}. Install the same version on both.")
 
-    def run(self, program, rounds: int, should_stop: Callable[[], bool] = lambda: False
-            ) -> Iterator[list[np.ndarray]]:
+    def run(self, program, rounds: int | None, should_stop: Callable[[], bool] = lambda: False,
+            average: bool = True) -> Iterator[list[np.ndarray]]:
         try:
-            program.acquire(self._soc, rounds=rounds, progress=False, step_rounds=True)  # loads, prepares round 1
-            for done in range(1, rounds + 1):
+            # loads, prepares round 1; QICK uses `rounds` only for its progress bar
+            program.acquire(self._soc, rounds=rounds or 1, progress=False, step_rounds=True)
+            for done in itertools.count(1):
                 self._acquire_round(program)
-                means = program._summarize_accumulated(program.rounds_buf)
-                yield [m[0].dot([1, 1j]) for m in means]  # first read of each shot
+                if average:
+                    data = program._summarize_accumulated(program.rounds_buf)
+                else:
+                    data = program.rounds_buf.pop()  # memory stays flat however long it runs
+                yield [m[0].dot([1, 1j]) for m in data]  # first read of each shot
                 if done == rounds or should_stop():
                     return
                 program.prepare_round()

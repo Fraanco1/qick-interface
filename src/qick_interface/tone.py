@@ -2,8 +2,8 @@
 spectrum analyzer, like the CW source of a PNA-X. Also used for I/Q calibration.
 
 Continuous: one periodic pulse that keeps playing until silenced.
-Pulsed: a pulse train (pulse length, period), with a marker on PMOD0_0 at each pulse start
-for triggering the oscilloscope; it runs until silenced.
+Pulsed: a pulse train (pulse length, period), with a marker on PMOD0_0 that is high for each
+pulse, for triggering the oscilloscope; it runs until silenced.
 """
 from typing import Literal
 
@@ -48,7 +48,7 @@ class _ToneProgram(TonesMixin, AveragerProgramV2):
     def _body(self, cfg):
         self.play_tone(cfg, "tone", t=0)
         if cfg["pulsed"]:
-            self.trigger(pins=[0], t=0)  # PMOD0_0 marks each pulse for the oscilloscope
+            self.trigger(pins=[0], t=0, width=cfg["pulse_length"])  # PMOD0_0 is high while the pulse plays
 
 
 def tone_program(soccfg, profile: SetupProfile, tone: OutputTone):

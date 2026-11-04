@@ -1,5 +1,6 @@
 """Start the instrument: python -m qick_interface [--fake] [--host 0.0.0.0] [--port 8080]"""
 import argparse
+import time
 from pathlib import Path
 
 import numpy as np
@@ -12,8 +13,13 @@ FIXTURE = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "soccfg_r
 
 
 def simulated_chip(program):
-    """For --fake: a resonator dip, a qubit dip in two-tone, or Rabi oscillations, plus noise."""
-    if "sweep" in program.cfg:  # Rabi: pi pulse at gain 0.35, or 0.1 µs, decaying over 1 µs
+    """For --fake: a resonator dip, a qubit dip in two-tone, Rabi oscillations, or a slowly
+    drifting CW Time trace, plus noise."""
+    if program.cfg.get("cw_time"):  # a 2 Hz wobble in level and phase over the sweep
+        t_s = time.time() + np.arange(program.cfg["points"]) * program.cfg["spacing"] * program.reps * 1e-6
+        s21 = (700 + 20 * np.sin(2 * np.pi * 2 * t_s)) * np.exp(1j * (0.3 + 0.1 * np.cos(2 * np.pi * 2 * t_s)))
+        f = t_s  # only its size is used below
+    elif "sweep" in program.cfg:  # Rabi: pi pulse at gain 0.35, or 0.1 µs, decaying over 1 µs
         from .measurements.rabi import Rabi
         f = Rabi.x_values(program)
         x_pi, decay = (0.35, 5.0) if program.cfg["sweep"] == "amplitude" else (0.1, 1.0)
@@ -29,7 +35,8 @@ def simulated_chip(program):
         f = ResonatorSweep.if_axis(program)
         f0, width = (f[0] + f[-1]) / 2, max(abs(f[-1] - f[0]) / 40, 0.01)
         s21 = 800 * (1 - 0.85 / (1 + 2j * (f - f0) / width)) * np.exp(-2j * np.pi * f * 0.05)
-    return [s21 + np.random.normal(0, 4, (f.size, 2)) @ [1, 1j]]
+    gain = program.get_pulse_param("probe" if "probe" in program.pulses else "readout", "gain")
+    return [gain * s21 + np.random.normal(0, 4, (f.size, 2)) @ [1, 1j]]  # signal scales with gain, noise doesn't
 
 
 def main():

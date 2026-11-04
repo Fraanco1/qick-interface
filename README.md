@@ -7,6 +7,7 @@ Anyone in the lab opens it in a browser. One person at a time controls the board
 It measures transmon and fluxonium chips:
 
 - **Resonator sweep:** |S21| and phase of the readout resonator, pulsed or CW (tone always on, like a PNA-X), with the cable delay removed.
+- **CW Time:** |S21| and phase against time at one frequency, redrawn sweep after sweep until Stop, like the PNA-X sweep type of the same name.
 - **Two-tone spectroscopy:** sweep a qubit tone while reading out at the resonator.
 - **Rabi:** sweep the qubit pulse amplitude or length, with a fitted π-pulse.
 - **Output tone:** a continuous tone or pulse train (with an oscilloscope trigger) for checking the setup, and for I/Q calibration.
@@ -44,6 +45,7 @@ The board must be running the QICK Pyro4 service; see [hardware setup](docs/hard
 | Document | Read it if you want to |
 |---|---|
 | [User guide](docs/user-guide.md) | measure a chip with the page |
+| [How S21 is computed](docs/s21.md) | know what the traces mean, and how they compare with a PNA-X |
 | [Hardware setup](docs/hardware-setup.md) | wire the bench, install or repair the board service |
 | [Developer guide](docs/developer-guide.md) | change the code or add a measurement |
 | [Architecture](docs/architecture.md) | see how the modules fit together |

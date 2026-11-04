@@ -10,7 +10,7 @@ from ..board import readout_channel
 from ..frequency import plan_sweep, rf_from_if
 from ..iq import TonesMixin, outputs
 from ..profiles import SetupProfile
-from .base import Update
+from .base import Update, received_s21
 
 
 class ResonatorSweepParams(BaseModel):
@@ -93,7 +93,7 @@ class ResonatorSweep:
         rf = rf_from_if(profile, if_mhz)
 
         for i, iq in enumerate(board.run(program, params.rounds, should_stop), start=1):
-            s21 = iq[0]
+            s21 = received_s21(iq[0], program, "probe", profile)
             with np.errstate(divide="ignore"):  # no signal gives -inf dB, shown as a gap
                 mag_db = 20 * np.log10(np.abs(s21))
             yield Update(i, params.rounds, rf, {
