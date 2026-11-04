@@ -380,3 +380,39 @@ def test_rx_calibration_is_offered_only_for_an_iq_return_path(client):
 
     assert measurements["rx_iq_cal"]["setup_requires"] == {"return_path": "iq"}
     assert measurements["resonator_sweep"]["setup_requires"] == {}
+
+
+@pytest.mark.parametrize("path", ["/", "/app.js", "/style.css"])
+def test_browsers_check_for_a_new_page_after_an_update(client, path):
+    # without this, browsers keep showing the old page after the app is updated
+    assert client.get(path).headers["cache-control"] == "no-cache"
+
+
+def test_deleting_a_chip_removes_its_setup_and_parameters_but_keeps_its_runs(client, tmp_path):
+    client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
+    client.patch("/api/parameters/Loopback", json={"readout_freq_mhz": 150.0}, headers=as_client("alice"))
+    (tmp_path / "data").mkdir(exist_ok=True)
+    (tmp_path / "data" / "run.npz").write_bytes(b"kept")
+
+    assert client.delete("/api/profiles/Loopback", headers=as_client("alice")).status_code == 200
+
+    assert "Loopback" not in client.get("/api/profiles").json()
+    assert not (tmp_path / "profiles" / "parameters" / "Loopback.json").exists()
+    assert (tmp_path / "data" / "run.npz").exists()
+    client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
+    assert client.get("/api/parameters/Loopback").json() == {}  # a new chip of the same name starts clean
+
+
+def test_only_the_controller_can_delete_a_chip(client):
+    client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
+
+    assert client.delete("/api/profiles/Loopback", headers=as_client("bob")).status_code == 403
+    assert "Loopback" in client.get("/api/profiles").json()
+
+
+def test_deleting_an_unknown_chip_says_so(client):
+    client.post("/api/control", headers=as_client("alice"))
+
+    assert client.delete("/api/profiles/Nope", headers=as_client("alice")).status_code == 404

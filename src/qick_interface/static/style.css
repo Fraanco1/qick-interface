@@ -49,6 +49,8 @@ button, input, select { font: inherit; color: inherit; }
   color: var(--ink); background: #fff; border: 1px solid var(--bezel-dark);
   border-radius: 3px; padding: 3px 6px;
 }
+.titlebar #setup-key { padding: 3px 10px; }
+.titlebar #setup-key[aria-expanded="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
 .control-status { color: var(--ink-soft); }
 .control-status.mine { color: var(--ink); font-weight: 500; }
 
@@ -60,6 +62,9 @@ button, input, select { font: inherit; color: inherit; }
   grid-template-rows: 1fr auto;
   gap: 10px; padding: 10px 16px 12px;
 }
+/* fixed cells, so the setup panel can lie over the screen */
+.screen, .setup-panel { grid-area: 1 / 1; }
+.softkeys { grid-area: 1 / 2; }
 
 /* ---- screen ------------------------------------------------------- */
 .screen {
@@ -96,6 +101,26 @@ button, input, select { font: inherit; color: inherit; }
   padding: 4px 8px; font-size: 13px; color: #ffffff; pointer-events: none;
 }
 
+/* ---- the chip's setup: a dialog over the screen, like an instrument's setup box ---- */
+.setup-panel {
+  z-index: 1; min-height: 0; overflow: auto;
+  display: flex; flex-direction: column; gap: 12px;
+  background: var(--bezel-light);
+  border: 6px solid #2a2f35; border-radius: 4px;
+  padding: 12px 16px 16px;
+}
+.setup-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.setup-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.setup-tabs { display: flex; gap: 4px; }
+.setup-head #setup-close { margin-left: auto; }
+.setup-body { display: flex; flex-direction: column; gap: 8px; max-width: 1100px; }
+.setup-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 20px; align-items: start; }
+.setup-fields .tone { grid-column: 1 / -1; max-width: 480px; }
+.setup-keys { display: flex; gap: 8px; margin-top: 4px; }
+.setup-keys .key { min-width: 120px; }
+.key-danger:not(:disabled) { color: var(--stop); border-color: var(--stop); }
+.setup-body .parameters { max-width: 360px; }
+
 /* ---- soft keys ---------------------------------------------------- */
 .softkeys {
   display: flex; flex-direction: column; gap: 10px; min-height: 0;
@@ -104,6 +129,7 @@ button, input, select { font: inherit; color: inherit; }
   padding: 10px;
 }
 .menus { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.menu-divider { grid-column: 1 / -1; width: 100%; margin: 3px 0; border: 0; border-top: 1px solid var(--bezel-dark); }
 .menu-body { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
 .field { display: flex; flex-direction: column; gap: 2px; }
 .field > span { color: var(--ink-soft); font-size: 13px; }
@@ -166,6 +192,8 @@ button, input, select { font: inherit; color: inherit; }
   .titlebar { gap: 8px 12px; }
   .spacer { display: none; }
   .menu-body { flex: none; overflow: visible; }
+  .softkeys { grid-area: 2 / 1; }
+  .setup-panel { padding: 10px 12px 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

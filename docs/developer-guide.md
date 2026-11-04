@@ -32,7 +32,7 @@ browser ──REST──▶ server.py ──▶ session.py ──worker thread�
 - **`iq.py`** makes every program play its tones the same way: one pulse on one DAC (real path), or the same pulse on the I and Q DACs with the calibrated phase and gain (I/Q path).
 - **`measurements/`**: one class per measurement (below).
 - **`session.py`** owns the single worker thread, the controller, the calibration tone, and the broadcast to viewers ([ADR 0003](adr/0003-single-controller.md)).
-- **`server.py`** is thin: routes and the WebSocket. **`storage.py`** saves runs. **`profiles.py`** stores setup profiles and chip parameters.
+- **`server.py`** is thin: routes and the WebSocket. It serves the page with `Cache-Control: no-cache`, so browsers pick up a new version as soon as the app restarts. **`storage.py`** saves runs. **`profiles.py`** stores setup profiles and chip parameters.
 
 ## Adding a measurement
 
@@ -167,7 +167,7 @@ Requests that change anything carry `X-Client-Id` (a random id per browser) and 
 | Method and path | Purpose |
 |---|---|
 | `GET /api/measurements` | Measurements with parameter schemas, x axis, plots, `marker_sets`, `info_sets`, `output_tone`, `run_key`, `setup_requires` |
-| `GET /api/profiles` · `PUT /api/profiles/{chip}` | List, create or replace setup profiles (controller only) |
+| `GET /api/profiles` · `PUT /api/profiles/{chip}` · `DELETE /api/profiles/{chip}` | List, create or replace, or delete setup profiles (changes: controller only). Delete also removes the chip parameters; runs stay. |
 | `GET /api/parameters/{chip}` · `PATCH /api/parameters/{chip}` | Read, add or overwrite chip parameters (controller only) |
 | `POST /api/control` | Become the controller |
 | `POST /api/runs` · `POST /api/runs/stop` | Start a run `{measurement, chip, params}` (409 if busy, 422 if invalid); stop after the current round |

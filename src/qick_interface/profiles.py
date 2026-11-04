@@ -63,6 +63,12 @@ def save_profile(directory: Path, profile: SetupProfile) -> None:
     (directory / f"{profile.chip}.json").write_text(profile.model_dump_json(indent=2))
 
 
+def delete_profile(directory: Path, chip: str) -> None:
+    """Remove a chip's setup and its chip parameters. Saved runs are not touched."""
+    (directory / f"{chip}.json").unlink()
+    (directory / "parameters" / f"{chip}.json").unlink(missing_ok=True)
+
+
 class ChipParameters(BaseModel):
     """Values measured on a chip that later measurements start from (all optional)."""
     model_config = ConfigDict(extra="forbid")

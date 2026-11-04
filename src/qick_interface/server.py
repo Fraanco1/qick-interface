@@ -16,7 +16,8 @@ from .measurements.resonator_sweep import ResonatorSweep
 from .measurements.rabi import Rabi
 from .measurements.rx_iq_cal import RxIqCal
 from .measurements.two_tone import TwoTone
-from .profiles import ChipParameters, SetupProfile, load_parameters, load_profiles, save_profile, update_parameters
+from .profiles import (ChipParameters, SetupProfile, delete_profile, load_parameters, load_profiles, save_profile,
+                       update_parameters)
 from .session import Busy, NotController, Session
 
 STATIC = Path(__file__).parent / "static"
@@ -59,6 +60,15 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None) -> FastAPI:
         except ValueError as e:
             raise HTTPException(400, str(e))
         return profile
+
+    @app.delete("/api/profiles/{chip}")
+    def remove_profile(chip: str, x_client_id: str = Header()):
+        if x_client_id != session.controller:
+            raise HTTPException(403, "Only the controller can delete a chip. Take control first.")
+        if chip not in load_profiles(profiles_dir):  # also keeps the name to files of saved chips
+            raise HTTPException(404, f"No setup profile for chip {chip!r}.")
+        delete_profile(profiles_dir, chip)
+        return {"deleted": chip}
 
     @app.get("/api/parameters/{chip}")
     def parameters(chip: str):
@@ -149,5 +159,15 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None) -> FastAPI:
         finally:
             session.unsubscribe(listener)
 
-    app.mount("/", StaticFiles(directory=STATIC, html=True), name="page")
+    app.mount("/", _RevalidatedStaticFiles(directory=STATIC, html=True), name="page")
     return app
+
+
+class _RevalidatedStaticFiles(StaticFiles):
+    """The page's files, which browsers must check for a newer version on every load (a cheap 304 when
+    unchanged); otherwise they may keep showing the old page after the app is updated."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response

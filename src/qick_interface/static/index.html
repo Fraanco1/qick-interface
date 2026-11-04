@@ -16,6 +16,7 @@
     <label class="chip-pick">Chip
       <select id="chip"></select>
     </label>
+    <button id="setup-key" class="key" type="button" aria-expanded="false" aria-controls="setup-panel">Setup</button>
     <label class="chip-pick">Measurement
       <select id="measurement"></select>
     </label>
@@ -38,6 +39,15 @@
         <div class="trace-line tr2" id="tr2-line"></div>
         <div class="plot" id="plot-phase"></div>
       </div>
+    </section>
+
+    <section class="setup-panel" id="setup-panel" aria-labelledby="setup-title" hidden>
+      <header class="setup-head">
+        <h2 id="setup-title"></h2>
+        <nav class="setup-tabs" id="setup-tabs" role="tablist"></nav>
+        <button id="setup-close" class="key" type="button" aria-label="Close setup">Close</button>
+      </header>
+      <form class="setup-body" id="setup-body" novalidate></form>
     </section>
 
     <aside class="softkeys" aria-label="Soft keys">

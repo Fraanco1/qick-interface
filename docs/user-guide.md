@@ -6,9 +6,9 @@ How to measure a chip with QICK Analyzer. Words in *italics* are defined in the 
 
 Open `http://<lab-PC-address>:8080`.
 
-- **Title bar:** the *chip* being measured, the *measurement*, who controls the board, your name, and **Take control**.
+- **Title bar:** the *chip* being measured and its **Setup** key, the *measurement*, who controls the board, your name, and **Take control**.
 - **Screen:** two plot windows on a 10-division grid. The line above each window shows the trace, its scale per division and the reference value (at the ▶ arrow), like a PNA-X.
-- **Soft keys** (right): menus with the measurement's settings, plus **Scale**, **Marker**, **Setup**, **Output** (two-tone and Rabi only) and, for chips with an I/Q output, **I/Q cal**. A menu shows only the fields that apply to the current mode. **Run sweep** (**Run** in CW Time) and **Stop** are at the bottom.
+- **Soft keys** (right): the measurement's menus (with **Output** in two-tone and Rabi), then, under a line, the display menus **Scale** and **Marker**. A menu shows only the fields that apply to the current mode. **Run sweep** (**Run** in CW Time) and **Stop** are at the bottom.
 - **Status bar:** what is on screen (measurement, start, stop, points, round), the board state (**Hold**, **Measuring** or **Tone**), and messages. Errors show in red.
 
 On a phone the soft keys move under the screen.
@@ -24,7 +24,7 @@ Taking control does not ask the current controller. Talk to them first: a run in
 
 ## Setting up a chip
 
-Each chip has a *setup profile*: how it is wired. Open **Setup**:
+Each chip has a *setup profile*: how it is wired. It is shared by every measurement on that chip, so it has its own key: press **Setup** next to the chip's name. The setup opens over the screen; **Close** (or Esc) returns to the traces.
 
 | Field | Meaning |
 |---|---|
@@ -45,6 +45,8 @@ Each chip has a *setup profile*: how it is wired. Open **Setup**:
 
 Press **Save setup**. To add a chip, change the name and save; the old chip stays.
 
+**Delete chip** removes the chip's setup and its chip parameters, after asking. Its saved runs in `data/` are kept. Only whoever controls the board can delete.
+
 The bottom of **Setup** lists the chip's *chip parameters*: values measured on it, filled in by the measurements below.
 
 Setups and chip parameters are stored on the lab PC in `profiles/` (setups as `<chip>.json`, parameters in `profiles/parameters/<chip>.json`). They are not in git, so include that folder in the lab PC's backups.
@@ -56,7 +58,7 @@ The app checks every frequency against the setup before running. For example, it
 An I/Q mixer also produces an *image* on the other side of the LO. With an uncalibrated MMIQ-0416LS it is only 25–30 dB weaker. Calibrating removes most of it.
 
 1. Connect the mixer's RF output to a spectrum analyzer (or the PNA-X in spectrum mode).
-2. Open **I/Q cal**, enter a **Frequency** inside the band you will measure (e.g. the readout frequency), and press **Tone on**.
+2. Press **Setup**, open its **I/Q cal** tab, enter a **Frequency** inside the band you will measure (e.g. the readout frequency), and press **Tone on**.
 3. On the analyzer, find the tone at RF and its image at LO − IF (upper sideband) or LO + IF (lower).
 4. Adjust **Q phase offset** and **Q / I gain** until the image is smallest. Each change reaches the board immediately; arrow keys step by 0.1° and 0.005.
 5. Press **Save setup**, then **Tone off**.
