@@ -115,15 +115,16 @@ The app reaches QICK through a Pyro4 server on the board. `board/` in this repo 
 | File | Role |
 |---|---|
 | `qick_service.py` | Starts the Pyro4 nameserver on 192.168.3.1:8888, waits until it answers, then loads the firmware and publishes the board as `rfsoc`. |
+| `scope.py` | The oscilloscope on the board's USB port (Tektronix MSO2024B), published next to the board as `scope` (`query`, `write`, `waveform`). Opened on first use; the service starts without it. |
 | `qick-pyro.service` | systemd unit: starts at boot after the network is up; restarts on failure, at most 5 times in 5 minutes. |
-| `install.sh` | Installs Pyro4 from local wheels, installs and starts the unit. |
+| `install.sh` | Installs Pyro4 and the scope packages (pyusb, pyvisa, pyvisa-py) from local wheels, installs and starts the unit. |
 
 ### Installing (or reinstalling)
 
 On the lab PC, from the repo:
 
 ```bash
-python3 -m pip download --only-binary=:all: --python-version 3.10 --platform any -d board/wheels Pyro4
+python3 -m pip download --only-binary=:all: --python-version 3.10 --platform any -d board/wheels Pyro4 pyusb pyvisa pyvisa-py
 ssh xilinx@192.168.3.1 mkdir -p qick-interface-board
 scp -r board/* xilinx@192.168.3.1:qick-interface-board/
 ```
@@ -145,6 +146,16 @@ sudo systemctl restart qick-pyro       # reload the firmware and restart
 sudo systemctl stop qick-pyro          # free the board, e.g. for Jupyter notebooks
 sudo systemctl reset-failed qick-pyro && sudo systemctl start qick-pyro   # after 5 failed starts
 ```
+
+### The oscilloscope
+
+The bench scope (Tektronix MSO2024B, 200 MHz, 1 GS/s) is plugged into the board's USB port: CH1 on DAC_A, CH2 on PMOD0_0. The board's kernel has no USB instrument driver, so `scope.py` uses pyvisa-py over libusb, as root inside the service. `scripts/scope_check.py` uses it to check the qubit pulses (see the developer guide, "Tests").
+
+Measured on the bench (2026-11-04):
+
+- The qubit pulse on DAC_A starts **76 ns after** the PMOD0_0 rising edge (cables included); trigger on PMOD and expect that offset.
+- PMOD0_0 swings 0 to 3.4 V. Into the scope's 1 MΩ input it rises in about 86 ns but falls in 8 ns and then rings for about 100 ns (down to −1.8 V, back up to +0.8 V): the line is unterminated. Measure its width between 50% points.
+- Keep scope tones at 50–100 MHz to see the carrier; above about 150 MHz only the envelope is reliable.
 
 ### The service owns the board
 

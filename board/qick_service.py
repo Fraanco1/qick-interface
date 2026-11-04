@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Runs on the RFSoC: starts a Pyro4 nameserver and exposes QickSoc to the lab PC.
+"""Runs on the RFSoC: starts a Pyro4 nameserver and exposes QickSoc (and the oscilloscope) to the lab PC.
 
 Installed as a systemd service by board/install.sh. Must run as root inside the
 PYNQ environment (`source /etc/profile`).
@@ -32,4 +32,19 @@ for _ in range(30):  # the USB link address may appear a little after boot
 else:
     sys.exit(f"Pyro4 nameserver did not answer on {HOST}:{NS_PORT} within 30 s.")
 
+
+
+def serve_scope():
+    """The oscilloscope on the board's USB, as "scope" (optional: skipped without its packages)."""
+    try:
+        from scope import Scope  # board/scope.py, next to this file
+    except ImportError as e:
+        print(f"no oscilloscope support: {e}")
+        return
+    daemon = Pyro4.Daemon(host=HOST)
+    Pyro4.locateNS(host=HOST, port=NS_PORT).register("scope", daemon.register(Scope()))
+    daemon.requestLoop()
+
+
+threading.Thread(target=serve_scope, daemon=True).start()
 start_server(ns_host=HOST, ns_port=NS_PORT, proxy_name=PROXY_NAME, bitfile=BITFILE)

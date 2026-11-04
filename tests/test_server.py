@@ -455,3 +455,19 @@ def test_a_two_tone_sequence_does_not_need_the_sweep_but_a_run_does(client):
     assert sequence.status_code == 200
     assert run.status_code == 422
     assert "qubit_start_mhz" in str(run.json()["detail"])  # the page shows it as "Qubit start"
+
+
+def test_the_controller_measures_the_time_of_flight_of_the_setup_being_edited(tmp_path):
+    def pulse_at_0_42_us(prog):
+        f_s = SOCCFG["readouts"][prog.cfg["inputs"][0]]["f_output"]
+        t = np.arange(int(prog.cfg["window_us"] * f_s)) / f_s
+        return [1000.0 * ((t >= 0.42) & (t < 0.42 + prog.cfg["pulse_us"])) + 0j]
+    app = create_app(FakeBoard(SOCCFG, pulse_at_0_42_us), data_dir=tmp_path / "data", profiles_dir=tmp_path / "profiles")
+    with TestClient(app) as client:
+        client.post("/api/control", headers=as_client("alice"))
+        unsaved = {**LOOPBACK, "chip": "Not saved yet"}
+
+        assert client.post("/api/time-of-flight", json=unsaved, headers=as_client("bob")).status_code == 403
+        measured = client.post("/api/time-of-flight", json=unsaved, headers=as_client("alice")).json()
+
+        assert measured["time_of_flight_us"] == pytest.approx(0.42, abs=0.005)

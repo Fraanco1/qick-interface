@@ -24,6 +24,10 @@ class FakeBoard:
         self._round_time_s = round_time_s
         self.playing = None  # program left playing by play(), for tests
 
+    def capture(self, program) -> list[np.ndarray]:
+        """The window's samples, averaged over the shots: one complex array per readout."""
+        return self._simulate(program)
+
     def play(self, program) -> None:
         self.playing = program
 
@@ -76,6 +80,18 @@ class QickBoard:
             raise
         finally:
             self._quietly(self._soc.reset_gens)  # silence any output left playing
+
+    def capture(self, program) -> list[np.ndarray]:
+        """The window's samples, averaged over the shots: one complex array per readout."""
+        try:
+            data = program.acquire_decimated(self._soc, rounds=program.cfg.get("rounds", 1), progress=False)
+            # with several shots per round QICK returns each shot: (shots, samples, I/Q)
+            return [np.asarray(d).reshape(-1, *np.shape(d)[-2:]).mean(axis=0).dot([1, 1j]) for d in data]
+        except BaseException:
+            self._abort()
+            raise
+        finally:
+            self._quietly(self._soc.reset_gens)
 
     def _acquire_round(self, program) -> None:
         """One round of accumulated data: QICK's finish_round (qick_asm.py, accumulated branch), but

@@ -354,7 +354,7 @@ const PROFILE_FIELDS = [
   ["electrical_delay_ns", "Electrical delay", "number", "ns",
     "Subtracted from the resonator sweep's phase. Empty: fitted on each sweep. Store it from a wide sweep (Marker menu)."],
   ["time_of_flight_us", "Time of flight", "number", "µs",
-    "From the trigger to when the signal reaches the ADC; the readout window opens this late."],
+    "From the trigger to when the signal reaches the ADC; the readout window opens this late. Measure sends a test pulse and finds it."],
   ["control_dac", "Control line", ["", "DAC_A", "DAC_B"], null,
     "A DAC of its own for the qubit tone, with no mixer: the qubit frequency is the DAC frequency."],
   ["return_path", "Return path", ["real", "iq"], null, "I/Q: an I/Q mixer into two ADCs, combined in software."],
@@ -448,12 +448,29 @@ function setupMenu(menu) {
   controls.iq_gain_ratio.step = "0.005";
   const extra = menu === "I/Q cal" ? [toneBlock(controls)] : [];
 
-  const save = button("Save setup", async () => {
+  const formProfile = () => {
     const profile = Object.fromEntries(Object.entries(controls).map(([k, c]) => [k, c.value]));
     profile.lo_mhz = profile.lo_mhz === "" ? null : Number(profile.lo_mhz);
     profile.control_dac = profile.control_dac || null;
     profile.electrical_delay_ns = profile.electrical_delay_ns === "" ? null : Number(profile.electrical_delay_ns);
     for (const k of NUMBER_FIELDS) profile[k] = Number(profile[k]);
+    return profile;
+  };
+  // Measure: the time of flight of the setup as edited; the result waits in the field for Save setup
+  const measure = button("Measure", async () => {
+    measure.disabled = true;
+    try {
+      const { time_of_flight_us } = await api("POST", "/api/time-of-flight", formProfile());
+      controls.time_of_flight_us.value = time_of_flight_us;
+      message(`Time of flight measured: ${time_of_flight_us} µs. Press Save setup to keep it.`);
+    } catch (e) { message(e.message, true); }
+    finally { measure.disabled = false; applyControl(); }
+  });
+  measure.dataset.control = "1";
+  rows.time_of_flight_us.querySelector(".input-row").append(measure);
+
+  const save = button("Save setup", async () => {
+    const profile = formProfile();
     try {
       await api("PUT", `/api/profiles/${encodeURIComponent(profile.chip)}`, profile);
       await loadProfiles(profile.chip);

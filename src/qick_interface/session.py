@@ -98,6 +98,18 @@ class Session:
             self.tone = settings
         self.broadcast(self.state())
 
+    def measure(self, client_id: str, how: Callable, profile):
+        """A short measurement outside a run (e.g. the time of flight): how(board) with the LO set."""
+        self._check_controller(client_id)
+        with self._start_lock:
+            if self.running:
+                raise Busy("Stop the run first.")
+            self._set_lo(profile)
+            self._silence()
+            result = how(self._board)
+        self.broadcast(self.state())
+        return result
+
     def _set_lo(self, profile) -> None:
         """Make the LO match the setup (when the app controls one and the setup uses one)."""
         if self._lo is not None and profile is not None and profile.lo_mhz is not None:

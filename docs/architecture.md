@@ -14,6 +14,7 @@ qick-interface/
 │   ├── iq.py                   # tones on one DAC or an I/Q pair; readouts on one ADC or an I/Q pair
 │   ├── lo.py                   # the Keysight CXG LO over LAN (SCPI), set from the setup
 │   ├── tone.py                 # continuous tone for I/Q calibration
+│   ├── time_of_flight.py       # the Setup panel's Measure key: when a test pulse reaches the ADC
 │   ├── measurements/
 │   │   ├── base.py             # what a measurement produces (Update)
 │   │   ├── resonator_sweep.py

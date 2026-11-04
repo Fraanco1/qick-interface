@@ -36,7 +36,7 @@ Each chip has a *setup profile*: how it is wired. It is shared by every measurem
 | Readout output | The DAC used on the real path. |
 | I output, Q output | The DACs used on the I/Q path (normally I = DAC_A, Q = DAC_B). |
 | Electrical delay | Subtracted from the resonator sweep's phase, in ns. Empty: fitted on each sweep. Filled from a wide sweep (see [Resonator sweep](#1-resonator-sweep)). |
-| Time of flight | From the trigger to when the signal reaches the ADC, in µs: cables, chip and the board's own latency (0.29 µs on the bench loopback). Every pulsed measurement opens its readout window this late. |
+| Time of flight | From the trigger to when the signal reaches the ADC, in µs: cables, chip and the board's own latency (0.29 µs on the bench loopback). Every pulsed measurement opens its readout window this late. **Measure** finds it in about a second: it sends a 1 µs test pulse 20 MHz above the chip's readout frequency (off the resonator; LO + 100 MHz, or 500 MHz with no LO, if there is none yet) and fills the field. Press **Save setup** to keep it. |
 | Control line | None, or a DAC of its own for the qubit tone, with no mixer: the qubit frequency you type is the DAC frequency (up to 4915 MHz). Used by two-tone and Rabi. It can't be a DAC the readout output already uses. |
 | Return path | Real: the signal comes back through a real mixer into one ADC. I/Q: through an I/Q mixer into two ADCs, combined in software, which rejects the image band (see [RX I/Q calibration](#rx-iq-calibration-iq-return-only)). |
 | Readout input | The ADC that receives the signal (real return path). |

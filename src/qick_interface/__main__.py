@@ -15,7 +15,11 @@ FIXTURE = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "soccfg_r
 
 def simulated_chip(program):
     """For --fake: a resonator dip, a qubit dip in two-tone, Rabi oscillations, or a slowly
-    drifting CW Time trace, plus noise."""
+    drifting CW Time trace, plus noise; or a test pulse arriving 0.29 µs after it was sent."""
+    if program.cfg.get("time_of_flight"):
+        t = np.arange(int(program.cfg["window_us"] * 552.96)) / 552.96
+        pulse = 900 * ((t >= 0.29) & (t < 0.29 + program.cfg["pulse_us"])) * np.exp(1.1j)
+        return [pulse + np.random.normal(0, 4, (t.size, 2)) @ [1, 1j] for _ in program.ro_chs]
     if program.cfg.get("cw_time"):  # a 2 Hz wobble in level and phase over the sweep
         t_s = time.time() + np.arange(program.cfg["points"]) * program.cfg["spacing"] * program.reps * 1e-6
         s21 = (700 + 20 * np.sin(2 * np.pi * 2 * t_s)) * np.exp(1j * (0.3 + 0.1 * np.cos(2 * np.pi * 2 * t_s)))

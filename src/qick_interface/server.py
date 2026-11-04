@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
 from .tone import OutputTone, tone_program
+from .time_of_flight import measure as measure_time_of_flight
 from .frequency import FrequencyError
 from .lo import LoError
 from .measurements.cw_time import CwTime
@@ -149,6 +150,20 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None) -> FastAPI:
         except (ValueError, FrequencyError, LoError) as e:
             raise HTTPException(422, str(e))
         return session.state()
+
+    @app.post("/api/time-of-flight")
+    def time_of_flight(profile: SetupProfile, x_client_id: str = Header()):
+        """Measure it with the setup as edited (not yet saved); the page fills the field."""
+        readout = load_parameters(profiles_dir, profile.chip).readout_freq_mhz  # None for a new chip
+        try:
+            us = session.measure(x_client_id, lambda b: measure_time_of_flight(b, profile, readout), profile)
+        except NotController as e:
+            raise HTTPException(403, str(e))
+        except Busy as e:
+            raise HTTPException(409, str(e))
+        except (ValueError, FrequencyError, LoError) as e:
+            raise HTTPException(422, str(e))
+        return {"time_of_flight_us": us}
 
     @app.post("/api/tone/off")
     def tone_off(x_client_id: str = Header()):
