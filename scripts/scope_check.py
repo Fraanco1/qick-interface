@@ -1,12 +1,16 @@
 """Check the qubit pulses on the oscilloscope (manual; the app must not be running).
 
-Wiring: DAC_A -> scope CH1, PMOD0_0 -> scope CH2, DAC_B -> ADC_D (loopback), and the scope's USB to
-the board (served by board/qick_service.py as "scope"). The qubit pulse goes out on DAC_A as a
-control line, at 50-100 MHz so the scope (200 MHz, 1 GS/s) shows the carrier. This script changes the
-scope's trigger, timebase and vertical settings.
+Wiring: DAC_A -> a scope channel (CH1 unless given), PMOD0_0 -> scope CH2, DAC_B -> ADC_D (loopback), and
+the scope's USB to the board (served by board/qick_service.py as "scope"). Tones are at 50-100 MHz so the
+scope (200 MHz, 1 GS/s) shows the carrier. Sections:
+  1-2. Two-tone and Rabi qubit pulses on DAC_A as a control line (fluxonium-like);
+  3.   qubit pulse, delay and readout pulse all on DAC_A, no control line (transmon-like);
+  4.   time between shots.
+This script changes the scope's trigger, timebase and vertical settings.
 
-    .venv/bin/python scripts/scope_check.py
+    .venv/bin/python scripts/scope_check.py [channel of DAC_A, e.g. CH3]
 """
+import sys
 import time
 
 import numpy as np
@@ -23,6 +27,7 @@ print(scope.query("*IDN?"))
 profile = SetupProfile(chip="Scope check", lo_mhz=None, readout_dac="DAC_B", readout_adc="ADC_D",
                        control_dac="DAC_A", time_of_flight_us=0.292)
 results = []
+DAC_A = sys.argv[1] if len(sys.argv) > 1 else "CH1"  # the scope channel DAC_A is cabled to
 
 
 def check(name, value, expected, tol, unit=""):
@@ -32,7 +37,7 @@ def check(name, value, expected, tol, unit=""):
 
 
 def setup_scope(window_s):
-    for cmd in ("SELECT:CH1 ON", "SELECT:CH2 ON", "CH1:COUPLING DC", "CH2:COUPLING DC", "CH1:POSITION 0",
+    for cmd in (f"SELECT:{DAC_A} ON", "SELECT:CH2 ON", f"{DAC_A}:COUPLING DC", "CH2:COUPLING DC", f"{DAC_A}:POSITION 0",
                 "CH2:SCALE 1.0", "CH2:POSITION -3", "HORIZONTAL:DELAY:MODE OFF", "HORIZONTAL:POSITION 10",
                 "ACQUIRE:MODE SAMPLE", "TRIGGER:A:TYPE EDGE", "TRIGGER:A:EDGE:SOURCE CH2",
                 "TRIGGER:A:EDGE:SLOPE RISE", "TRIGGER:A:LEVEL:CH2 0.9", "TRIGGER:A:MODE NORMAL",
@@ -41,7 +46,7 @@ def setup_scope(window_s):
 
 
 def acquire():
-    """One triggered acquisition of CH1 and CH2: (t, ch1, ch2)."""
+    """One triggered acquisition of DAC_A's channel and CH2: (t, dac_a, ch2)."""
     scope.write("ACQUIRE:STOPAFTER SEQUENCE")
     scope.write("ACQUIRE:STATE RUN")
     t0 = time.time()
@@ -49,16 +54,16 @@ def acquire():
         if time.time() - t0 > 5:
             raise RuntimeError("The scope did not trigger on CH2 (PMOD) within 5 s.")
         time.sleep(0.05)
-    t, ch1 = scope.waveform("CH1")
+    t, ch1 = scope.waveform(DAC_A)
     _, ch2 = scope.waveform("CH2")
     return np.asarray(t), np.asarray(ch1), np.asarray(ch2)
 
 
 def acquire_ranged():
-    """Acquire, adjusting CH1's volts/div until the pulse fills the screen without clipping."""
+    """Acquire, adjusting DAC_A's volts/div until the pulse fills the screen without clipping."""
     scale = 0.2
     for _ in range(6):
-        scope.write(f"CH1:SCALE {scale:.3g}")
+        scope.write(f"{DAC_A}:SCALE {scale:.3g}")
         t, ch1, ch2 = acquire()
         peak = np.max(np.abs(ch1))
         if peak > 4.8 * scale:
@@ -112,7 +117,7 @@ def carrier_mhz(t, v):
 
 
 def pulse(t, ch1, ch2, f_mhz):
-    """The qubit pulse on CH1 and the PMOD marker on CH2, in µs from the PMOD rising edge."""
+    """The qubit pulse on DAC_A and the PMOD marker on CH2, in µs from the PMOD rising edge."""
     rises, falls = marker_edges(t, ch2)
     marker_on = rises[np.argmin(np.abs(rises))]  # the edge the scope triggered on
     marker_off = falls[falls > marker_on][0]
@@ -179,7 +184,36 @@ try:
     check("PMOD high for 4σ", p["marker_us"], 0.4, 0.01, " µs")
     check("peak / flat pulse at the same gain (QICK: 0.5)", p["peak_v"] / ref["amplitude_v"], 0.5, 0.03)
 
-    # 3. Time between shots: PMOD edges over a few milliseconds
+    # 3. Transmon-like: qubit pulse, delay and readout pulse on the same DAC (no control line)
+    transmon = profile.model_copy(update={"readout_dac": "DAC_A", "control_dac": None})
+    for name, params, qubit_us in (
+            ("Gaussian σ 0.1 µs, then readout after the default delay",
+             RabiParams(qubit_freq_mhz=50, readout_freq_mhz=90, sigma_us=0.1, scope_gain=0.5, readout_gain=0.5,
+                        readout_pulse_us=1.0), 0.4),
+            ("flat 0.3 µs, then a half-height readout after 200 ns",
+             RabiParams(sweep="length", qubit_freq_mhz=50, readout_freq_mhz=90, qubit_gain=0.5, scope_length_us=0.3,
+                        readout_gain=0.25, readout_pulse_us=1.0, readout_gap_us=0.2), 0.3)):
+        setup_scope(2e-6)
+        play(Rabi.sequence(board.soccfg, transmon, params))
+        t, ch1, ch2 = acquire_ranged()
+        rises, _ = marker_edges(t, ch2)
+        t0 = rises[np.argmin(np.abs(rises))] + latency_ns * 1e-9  # when DAC_A starts the shot
+        qubit_end = t0 + qubit_us * 1e-6
+        readout_start = qubit_end + params.readout_gap_us * 1e-6
+        env = envelope(t, ch1, 50)
+        middle = (t > readout_start + 0.2e-6) & (t < readout_start + (params.readout_pulse_us - 0.2) * 1e-6)
+        level = np.median(env[middle])
+        after = t > qubit_end + 10e-9  # past the qubit pulse (a flat one drops below half the readout level)
+        on = after & (env > level / 2)
+        start, end = t[np.flatnonzero(on)[0]], t[np.flatnonzero(on)[-1]]
+        qubit = (t > t0 + 0.25 * qubit_us * 1e-6) & (t < t0 + 0.75 * qubit_us * 1e-6)
+        print(f"\nTransmon-like, {name}: readout {(start - t0) * 1e9:.0f}–{(end - t0) * 1e9:.0f} ns after the shot starts")
+        check("readout starts after qubit pulse + delay", (start - t0) * 1e6, qubit_us + params.readout_gap_us, 0.006, " µs")
+        check("readout length", (end - start) * 1e6, params.readout_pulse_us, 0.01, " µs")
+        check("readout carrier", carrier_mhz(t[middle], ch1[middle]), 90.0, 0.2, " MHz")
+        check("qubit carrier", carrier_mhz(t[qubit], ch1[qubit]), 50.0, 1.0, " MHz")
+
+    # 4. Time between shots: PMOD edges over a few milliseconds
     for delay in (100.0, 500.0):
         setup_scope(4 * (delay + 5) * 1e-6)
         play(TwoTone.sequence(board.soccfg, profile, base_tt.model_copy(update={"final_delay_us": delay})))
