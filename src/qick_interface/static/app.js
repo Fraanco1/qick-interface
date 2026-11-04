@@ -97,8 +97,7 @@ function menuNames() {
   for (const p of Object.values(state.schema.properties)) {
     if (p.group && !groups.includes(p.group)) groups.push(p.group);
   }
-  const output = state.measurements[state.measurement].output_tone ? ["Output"] : [];
-  return [...groups, ...output, "Scale", "Marker"];
+  return [...groups, "Scale", "Marker"];
 }
 
 // Measurements this chip's setup can run (e.g. RX I/Q calibration needs an I/Q return path).
@@ -135,14 +134,13 @@ function renderMenuBody() {
   const body = $("menu-body");
   if (state.menu === "Marker") body.replaceChildren(...markerMenu());
   else if (state.menu === "Scale") body.replaceChildren(...scaleMenu());
-  else if (state.menu === "Output") body.replaceChildren(toneBlock(null),
-    hint("Sends a tone on the chip's output path, for checking the setup with an oscilloscope or spectrum analyzer."));
   else {
     const saved = store.get(paramsKey(), {});
     const applies = (p) => Object.entries(p.shown_when ?? {}).every(([key, value]) =>
       paramValue(key, state.schema.properties[key], saved).value === value);
     const fields = Object.entries(state.schema.properties).filter(([, p]) => p.group === state.menu && applies(p));
     body.replaceChildren(...fields.map(([key, p]) => paramField(key, p)));
+    if (state.menu === "Output" && state.measurements[state.measurement].sequence) body.append(...sequenceKeys());
   }
   applyControl();
 }
@@ -180,6 +178,7 @@ function paramField(key, p) {
     params[key] = input.value === "" ? undefined : p.enum ? input.value : Number(input.value);
     store.set(paramsKey(), params);
     if (p.enum) renderMenuBody();  // a mode change shows that mode's fields
+    if (state.tone?.mode === "sequence") playSequence();  // a playing sequence follows every edit
   };
   return field(p.title, input, p.unit, fromChip ? "From the chip parameters." : p.description);
 }
@@ -481,39 +480,52 @@ function setupMenu(menu) {
   return [fields, ...footer];
 }
 
-// A tone on the chip's output path, like the CW source of a PNA-X: continuous, or a pulse train
-// with a trigger marker on PMOD0_0. While it plays, every edit is sent at once. With `calibration`
-// (the I/Q cal menu's controls) it also sends the Q phase offset and gain being tuned.
+// The Output menu of a pulsed measurement: its own shot at one point, repeated for an oscilloscope.
+function sequenceKeys() {
+  const play = button("Play sequence", playSequence, "key-strong"); play.dataset.control = "1";
+  const off = button("Off", () => {
+    clearTimeout(sequencePending);  // an edit committed by this click must not restart it
+    api("POST", "/api/tone/off").catch((e) => message(e.message, true));
+  });
+  off.dataset.control = "1";
+  const keys = document.createElement("div"); keys.className = "run-keys"; keys.append(play, off);
+  return [keys, hint("Plays this measurement's shot (qubit pulse, then readout pulse) at the value above, " +
+    "with the settings of the other menus, until Off. PMOD0_0 is high while the qubit pulse plays: " +
+    "trigger the oscilloscope on it.")];
+}
+
+let sequencePending;
+function playSequence() {
+  clearTimeout(sequencePending);
+  sequencePending = setTimeout(async () => {
+    try {
+      await api("POST", "/api/sequence", { measurement: state.measurement, chip: $("chip").value, params: collectParams() });
+      message("Sequence playing. Off or starting a run stops it.");
+    } catch (e) { message(e.message, true); }
+  }, 120);
+}
+
+// The I/Q calibration tone: continuous, on the chip's output path. While it plays, every edit is sent
+// at once, including the Q phase offset and gain being tuned (`calibration`: the I/Q cal tab's controls).
 function toneBlock(calibration) {
   const box = document.createElement("fieldset");
   box.className = "tone";
   const legend = document.createElement("legend");
-  legend.textContent = calibration ? "Calibration tone" : "Output tone";
+  legend.textContent = "Calibration tone";
   const number = (key, fallback, step) => {
     const c = document.createElement("input"); c.type = "number"; c.step = step; c.inputMode = "decimal";
     c.value = store.get(key, fallback); c.dataset.control = "1"; return c;
   };
   const rf = number("toneRf", "", "any"), gain = number("toneGain", 0.3, "0.05");
   gain.min = 0; gain.max = 1;
-  const mode = document.createElement("select"); mode.dataset.control = "1";
-  mode.append(new Option("Continuous", "continuous"), new Option("Pulsed", "pulsed"));
-  mode.value = calibration ? "continuous" : store.get("toneMode", "continuous");
-  const length = number("tonePulse", 1, "any"), period = number("tonePeriod", 10, "any");
-  const pulseRows = [field("Pulse length", length, "µs"), field("Period", period, "µs", "PMOD0_0 gives a trigger at each pulse.")];
-  const showPulse = () => pulseRows.forEach((r) => { r.hidden = mode.value !== "pulsed"; });
-  mode.addEventListener("change", showPulse);
-  showPulse();
 
   const send = async () => {
-    for (const [k, c] of [["toneRf", rf], ["toneGain", gain], ["toneMode", mode], ["tonePulse", length], ["tonePeriod", period]]) store.set(k, c.value);
-    const body = { chip: $("chip").value, rf_mhz: Number(rf.value), gain: Number(gain.value), mode: mode.value,
-                   pulse_length_us: Number(length.value), period_us: Number(period.value) };
-    if (calibration) Object.assign(body, { iq_phase_deg: Number(calibration.iq_phase_deg.value),
-                                           iq_gain_ratio: Number(calibration.iq_gain_ratio.value) });
+    for (const [k, c] of [["toneRf", rf], ["toneGain", gain]]) store.set(k, c.value);
+    const body = { chip: $("chip").value, rf_mhz: Number(rf.value), gain: Number(gain.value),
+                   iq_phase_deg: Number(calibration.iq_phase_deg.value), iq_gain_ratio: Number(calibration.iq_gain_ratio.value) };
     try {
       await api("POST", "/api/tone", body);
-      message(calibration ? "Tone playing. Adjust the Q phase offset and Q / I gain until the image is smallest."
-                          : "Tone playing. Starting a run turns it off.");
+      message("Tone playing. Adjust the Q phase offset and Q / I gain until the image is smallest.");
     } catch (e) { message(e.message, true); }
   };
   const on = button("Tone on", send); on.dataset.control = "1";
@@ -522,12 +534,10 @@ function toneBlock(calibration) {
   const keys = document.createElement("div"); keys.className = "run-keys"; keys.append(on, off);
 
   let pending;
-  const live = () => { if (state.tone) { clearTimeout(pending); pending = setTimeout(send, 120); } };
-  const watched = [rf, gain, mode, length, period, ...(calibration ? [calibration.iq_phase_deg, calibration.iq_gain_ratio] : [])];
-  for (const c of watched) c.addEventListener(c.tagName === "SELECT" ? "change" : "input", live);
+  const live = () => { if (state.tone?.rf_mhz !== undefined) { clearTimeout(pending); pending = setTimeout(send, 120); } };
+  for (const c of [rf, gain, calibration.iq_phase_deg, calibration.iq_gain_ratio]) c.addEventListener("input", live);
 
-  if (calibration) box.append(legend, field("Frequency", rf, "MHz"), field("Tone gain", gain), keys);
-  else box.append(legend, field("Frequency", rf, "MHz"), field("Gain", gain), field("Mode", mode), ...pulseRows, keys);
+  box.append(legend, field("Frequency", rf, "MHz"), field("Tone gain", gain), keys);
   return box;
 }
 
@@ -559,8 +569,9 @@ function applyControl() {
   $("run").disabled = !mine || state.running || !$("chip").value;
   $("stop").disabled = !mine || !state.running;
   const led = $("st-state");
-  const toneKind = state.tone?.mode === "pulsed" ? "Pulses" : "Tone";
-  led.textContent = state.running ? "Measuring" : state.tone ? `${toneKind} ${formatFreq(state.tone.rf_mhz)}` : "Hold";
+  led.textContent = state.running ? "Measuring"
+    : state.tone?.mode === "sequence" ? `Sequence (${state.tone.measurement})`
+    : state.tone ? `Tone ${formatFreq(state.tone.rf_mhz)}` : "Hold";
   led.classList.toggle("on", state.running || !!state.tone);
   const lo = $("st-lo");  // what the LO read back the last time the app set it
   lo.hidden = !state.lo;

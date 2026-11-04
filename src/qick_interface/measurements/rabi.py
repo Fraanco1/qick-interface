@@ -11,6 +11,7 @@ from scipy.optimize import OptimizeWarning, curve_fit
 from ..frequency import plan_drive, plan_sweep
 from ..iq import TonesMixin, control_outputs, inputs, outputs, send_readouts
 from ..profiles import SetupProfile
+from ..tone import LOOP_MAX
 from .base import Update, received_s21
 
 
@@ -35,6 +36,11 @@ class RabiParams(BaseModel):
     averages: int = _f(500, group="Average", ge=1, title="Averages per round")
     rounds: int = _f(10, group="Average", ge=1, title="Rounds")
     final_delay_us: float = _f(50.0, group="Average", unit="µs", ge=0, title="Repetition delay")
+    # the one shot the Output menu's sequence repeats
+    scope_gain: float = _f(0.5, group="Output", chip="pi_gain", ge=0, le=1, when={"sweep": "amplitude"},
+                           title="Qubit gain", description="The one qubit gain the sequence plays.")
+    scope_length_us: float = _f(0.1, group="Output", unit="µs", gt=0, le=100, when={"sweep": "length"},
+                                title="Qubit pulse length", description="The one pulse length the sequence plays.")
 
 
 class _Program(TonesMixin, AveragerProgramV2):
@@ -56,14 +62,15 @@ class _Program(TonesMixin, AveragerProgramV2):
     def _body(self, cfg):
         send_readouts(self, cfg, "ro")
         self.play_tone(cfg, "qubit", t=0)
+        if cfg["scope"]:  # PMOD0_0 is high while the qubit pulse plays
+            self.trigger(pins=[0], t=0, width=4 * cfg["sigma"] if cfg["sweep"] == "amplitude" else cfg["swept"])
         self.delay_auto(t=0.05)  # readout right after the qubit pulse
         self.play_tone(cfg, "readout", t=0)
-        self.read(cfg, pins=[0], t=cfg["trigger_delay"])
+        self.read(cfg, pins=None if cfg["scope"] else [0], t=cfg["trigger_delay"])
 
 
 class Rabi:
     name = "Rabi"
-    output_tone = True  # the Output menu: a pulse train with a PMOD0_0 marker, to check pulses on a scope
     Params = RabiParams
     x_axis = {"title": "Qubit gain", "unit": ""}
     marker_sets = None
@@ -77,18 +84,17 @@ class Rabi:
         param = "gain" if program.cfg["sweep"] == "amplitude" else "length"
         return program.get_pulse_param("qubit", param, as_array=True)
 
-    @classmethod
-    def run(cls, board, profile: SetupProfile, params: RabiParams,
-            should_stop: Callable[[], bool] = lambda: False) -> Iterator[Update]:
+    @staticmethod
+    def _program(soccfg, profile, params, swept, points, reps, scope=False):
         qubit = plan_drive(profile, params.qubit_freq_mhz, params.qubit_freq_mhz)
         readout = plan_sweep(profile, params.readout_freq_mhz, params.readout_freq_mhz)
-        program = _Program(board.soccfg, reps=params.averages, final_delay=params.final_delay_us, cfg={
-            "outputs": outputs(board.soccfg, profile),
-            "control": control_outputs(board.soccfg, profile),
-            "inputs": inputs(board.soccfg, profile),
+        return _Program(soccfg, reps=reps, final_delay=params.final_delay_us, cfg={
+            "outputs": outputs(soccfg, profile),
+            "control": control_outputs(soccfg, profile),
+            "inputs": inputs(soccfg, profile),
             "sweep": params.sweep,
-            "swept": QickSweep1D("sweep", params.start, params.stop),
-            "points": params.points,
+            "swept": swept,
+            "points": points,
             "qubit_freq": qubit.if_start,
             "qubit_gain": params.qubit_gain,
             "sigma": params.sigma_us,
@@ -97,7 +103,20 @@ class Rabi:
             "readout_pulse": params.readout_pulse_us,
             "readout_length": params.readout_length_us,
             "trigger_delay": profile.time_of_flight_us,
+            "scope": scope,
         })
+
+    @classmethod
+    def sequence(cls, soccfg, profile: SetupProfile, params: RabiParams):
+        """One shot at the Output menu's gain (or length), repeated until silenced, for an oscilloscope."""
+        at = params.scope_gain if params.sweep == "amplitude" else params.scope_length_us
+        return cls._program(soccfg, profile, params, at, points=LOOP_MAX, reps=LOOP_MAX, scope=True)
+
+    @classmethod
+    def run(cls, board, profile: SetupProfile, params: RabiParams,
+            should_stop: Callable[[], bool] = lambda: False) -> Iterator[Update]:
+        program = cls._program(board.soccfg, profile, params, QickSweep1D("sweep", params.start, params.stop),
+                               points=params.points, reps=params.averages)
         x = cls.x_values(program)
         if params.sweep == "amplitude":
             x_axis, info_name = {"title": "Qubit gain", "unit": ""}, "π-pulse gain"

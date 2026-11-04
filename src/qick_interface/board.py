@@ -99,7 +99,7 @@ class QickBoard:
         program.rounds_buf.append(program._process_accumulated(program.acc_buf))
 
     def play(self, program) -> None:
-        """Start a program without waiting for it: a pulse train keeps running, a periodic
+        """Start a program without waiting for it: a scope sequence keeps running, a periodic
         tone keeps playing after the program ends. Both last until silence()."""
         self.silence()
         program.run(self._soc)

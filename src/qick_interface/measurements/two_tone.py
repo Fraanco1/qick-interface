@@ -2,12 +2,14 @@
 from collections.abc import Callable, Iterator
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic_core import PydanticCustomError
 from qick.asm_v2 import AveragerProgramV2, QickSweep1D
 
 from ..frequency import drive_rf_from_if, plan_drive, plan_sweep
 from ..iq import TonesMixin, control_outputs, inputs, outputs, send_readouts
 from ..profiles import SetupProfile
+from ..tone import LOOP_MAX
 from .base import Update, received_s21
 
 
@@ -17,8 +19,9 @@ def _f(default=..., group=None, unit=None, chip=None, **kw):
 
 
 class TwoToneParams(BaseModel):
-    qubit_start_mhz: float = _f(group="Sweep", unit="MHz", title="Qubit start")
-    qubit_stop_mhz: float = _f(group="Sweep", unit="MHz", title="Qubit stop")
+    # required for a run; the Output menu's sequence plays one frequency and does without them
+    qubit_start_mhz: float | None = _f(None, group="Sweep", unit="MHz", title="Qubit start", validate_default=True)
+    qubit_stop_mhz: float | None = _f(None, group="Sweep", unit="MHz", title="Qubit stop", validate_default=True)
     points: int = _f(201, group="Sweep", ge=2, le=10001, title="Points")
     qubit_gain: float = _f(0.1, group="Qubit", chip="qubit_gain", ge=0, le=1, title="Qubit gain")
     qubit_length_us: float = _f(10.0, group="Qubit", unit="µs", gt=0, le=100, title="Qubit pulse length")
@@ -29,6 +32,16 @@ class TwoToneParams(BaseModel):
     averages: int = _f(100, group="Average", ge=1, title="Averages per round")
     rounds: int = _f(10, group="Average", ge=1, title="Rounds")
     final_delay_us: float = _f(50.0, group="Average", unit="µs", ge=0, title="Repetition delay")
+    scope_qubit_freq_mhz: float | None = _f(None, group="Output", unit="MHz", chip="qubit_freq_mhz",
+                                            title="Qubit frequency",
+                                            description="The one qubit frequency the sequence plays (RF).")
+
+    @field_validator("qubit_start_mhz", "qubit_stop_mhz")
+    @classmethod
+    def _needed_for_a_sweep(cls, v, info: ValidationInfo):
+        if v is None and not (info.context or {}).get("sequence"):
+            raise PydanticCustomError("missing", "Field required")
+        return v
 
 
 class _Program(TonesMixin, AveragerProgramV2):
@@ -45,14 +58,15 @@ class _Program(TonesMixin, AveragerProgramV2):
     def _body(self, cfg):
         send_readouts(self, cfg, "ro")
         self.play_tone(cfg, "qubit", t=0)
+        if cfg["scope"]:  # PMOD0_0 is high while the qubit pulse plays
+            self.trigger(pins=[0], t=0, width=cfg["qubit_length"])
         self.delay_auto(t=0.05)  # readout right after the qubit pulse
         self.play_tone(cfg, "readout", t=0)
-        self.read(cfg, pins=[0], t=cfg["trigger_delay"])
+        self.read(cfg, pins=None if cfg["scope"] else [0], t=cfg["trigger_delay"])
 
 
 class TwoTone:
     name = "Two-tone spectroscopy"
-    output_tone = True  # the Output menu: a pulse train with a PMOD0_0 marker, to check pulses on a scope
     Params = TwoToneParams
     x_axis = {"title": "Qubit frequency", "unit": "MHz"}
     marker_sets = "qubit_freq_mhz"  # chip parameter the marker can be stored as
@@ -65,25 +79,40 @@ class TwoTone:
         """IF of the qubit tone at each sweep point, in MHz, as rounded by QICK."""
         return program.get_pulse_param("qubit", "freq", as_array=True)
 
-    @classmethod
-    def run(cls, board, profile: SetupProfile, params: TwoToneParams,
-            should_stop: Callable[[], bool] = lambda: False) -> Iterator[Update]:
-        qubit = plan_drive(profile, params.qubit_start_mhz, params.qubit_stop_mhz)
+    @staticmethod
+    def _program(soccfg, profile, params, qubit_start_mhz, qubit_stop_mhz, points, reps, scope=False):
+        qubit = plan_drive(profile, qubit_start_mhz, qubit_stop_mhz)
         readout = plan_sweep(profile, params.readout_freq_mhz, params.readout_freq_mhz)
-        program = _Program(board.soccfg, reps=params.averages, final_delay=params.final_delay_us, cfg={
-            "outputs": outputs(board.soccfg, profile),
-            "control": control_outputs(board.soccfg, profile),
-            "inputs": inputs(board.soccfg, profile),
-            "qubit_freq": QickSweep1D("freq", qubit.if_start, qubit.if_stop),
+        qubit_freq = qubit.if_start if scope else QickSweep1D("freq", qubit.if_start, qubit.if_stop)
+        return _Program(soccfg, reps=reps, final_delay=params.final_delay_us, cfg={
+            "outputs": outputs(soccfg, profile),
+            "control": control_outputs(soccfg, profile),
+            "inputs": inputs(soccfg, profile),
+            "qubit_freq": qubit_freq,
             "readout_freq": readout.if_start,
-            "points": params.points,
+            "points": points,
             "qubit_gain": params.qubit_gain,
             "qubit_length": params.qubit_length_us,
             "readout_gain": params.readout_gain,
             "readout_pulse": params.readout_pulse_us,
             "readout_length": params.readout_length_us,
             "trigger_delay": profile.time_of_flight_us,
+            "scope": scope,
         })
+
+    @classmethod
+    def sequence(cls, soccfg, profile: SetupProfile, params: TwoToneParams):
+        """One shot at the Output menu's qubit frequency, repeated until silenced, for an oscilloscope."""
+        if params.scope_qubit_freq_mhz is None:
+            raise ValueError("Enter the Qubit frequency in the Output menu.")
+        f = params.scope_qubit_freq_mhz
+        return cls._program(soccfg, profile, params, f, f, points=LOOP_MAX, reps=LOOP_MAX, scope=True)
+
+    @classmethod
+    def run(cls, board, profile: SetupProfile, params: TwoToneParams,
+            should_stop: Callable[[], bool] = lambda: False) -> Iterator[Update]:
+        program = cls._program(board.soccfg, profile, params, params.qubit_start_mhz, params.qubit_stop_mhz,
+                               points=params.points, reps=params.averages)
         qubit_if = cls.qubit_if_axis(program)
         rf = drive_rf_from_if(profile, qubit_if)
 

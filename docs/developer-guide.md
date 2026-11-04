@@ -27,7 +27,7 @@ browser ──REST──▶ server.py ──▶ session.py ──worker thread�
 
 - **`board.py`** is the only module that touches QICK hardware. `QickBoard` talks to the board over Pyro4; `FakeBoard` takes a function that computes a simulated response from the compiled program. Both expose `soccfg`, `run(program, rounds, should_stop, average=True)` (yields the running average per readout after each round; `average=False` yields each round alone, `rounds=None` runs until stopped), `play(program)` (start without waiting, e.g. the output tone) and `silence()`.
   - `QickBoard` runs its own round loop instead of QICK's `finish_round`: every wait on the board is finite (`poll_data(timeout=1.0)`), and a round with no new data for `STALL_S` (30 s) fails with a clear error. QICK's loop waits forever, and a board-side call left waiting steals data from later runs, so they hang too. Keep this when upgrading QICK.
-- **`tone.py`** builds the output tone (continuous, or a pulse train with a PMOD0_0 marker), also used for I/Q calibration.
+- **`tone.py`** builds the continuous calibration tone used by I/Q calibration.
 - **`frequency.py`** is pure: RF ↔ IF for a setup profile, and the ADC/DAC limits.
 - **`iq.py`** makes every program play its tones the same way: one pulse on one DAC (real path), or the same pulse on the I and Q DACs with the calibrated phase and gain (I/Q path).
 - **`measurements/`**: one class per measurement (below).
@@ -97,7 +97,6 @@ class MyMeasurement:
              {"title": "S21 Phase", "unit": "°", "traces": ["Phase (°)"]}]   # exactly two windows
     marker_sets = "qubit_freq_mhz"                   # what "Marker → …" stores, or None
     info_sets = {}                                   # fit result name → chip parameter
-    output_tone = True                               # optional: show the Output menu (pulsed measurements)
     run_key = "Run sweep"                            # optional: the run key's label (default)
     setup_requires = {}                              # optional: e.g. {"return_path": "iq"}; else not listed
 
@@ -107,6 +106,8 @@ class MyMeasurement:
         for i, iq in enumerate(board.run(program, params.rounds, should_stop), start=1):
             yield Update(i, params.rounds, x, traces={...}, raw={"s21": iq[0]}, info={...})
 ```
+
+A pulsed measurement can also offer a **scope sequence** (see `rabi.py`, `two_tone.py`): put the one point it plays in parameters of the group `"Output"`, and add a classmethod `sequence(soccfg, profile, params)` that returns the same program with that point fixed, both loops at `tone.LOOP_MAX` (it plays until silenced), and a PMOD0_0 trigger on the qubit pulse. The page then shows Play sequence and Off in the Output menu. Parameters only a run needs can be skipped for the sequence: it validates with `context={"sequence": True}` (see `TwoToneParams`).
 
 A measurement that runs until Stop (like `cw_time.py`) passes `rounds=None` to `board.run` and to its `Update`s; the page then shows "Sweep n", and Stop counts as a completed run.
 
@@ -166,12 +167,13 @@ Requests that change anything carry `X-Client-Id` (a random id per browser) and 
 
 | Method and path | Purpose |
 |---|---|
-| `GET /api/measurements` | Measurements with parameter schemas, x axis, plots, `marker_sets`, `info_sets`, `output_tone`, `run_key`, `setup_requires` |
+| `GET /api/measurements` | Measurements with parameter schemas, x axis, plots, `marker_sets`, `info_sets`, `sequence`, `run_key`, `setup_requires` |
 | `GET /api/profiles` · `PUT /api/profiles/{chip}` · `DELETE /api/profiles/{chip}` | List, create or replace, or delete setup profiles (changes: controller only). Delete also removes the chip parameters; runs stay. |
 | `GET /api/parameters/{chip}` · `PATCH /api/parameters/{chip}` | Read, add or overwrite chip parameters (controller only) |
 | `POST /api/control` | Become the controller |
 | `POST /api/runs` · `POST /api/runs/stop` | Start a run `{measurement, chip, params}` (409 if busy, 422 if invalid); stop after the current round |
-| `POST /api/tone` · `POST /api/tone/off` | Play or stop the output tone `{chip, rf_mhz, gain, mode, pulse_length_us, period_us, iq_phase_deg?, iq_gain_ratio?}` (the last two only while tuning I/Q calibration) |
+| `POST /api/tone` · `POST /api/tone/off` | Play the I/Q calibration tone `{chip, rf_mhz, gain, iq_phase_deg?, iq_gain_ratio?}`, or stop whatever plays (tone or sequence) |
+| `POST /api/sequence` | Play a pulsed measurement's shot at one point until `/api/tone/off` `{measurement, chip, params}` |
 | `WS /ws` | Live messages; on connect, the current state and the last update |
 
 WebSocket messages have a `type`:

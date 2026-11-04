@@ -86,3 +86,29 @@ def test_the_window_opens_after_the_setups_time_of_flight():
     list(Rabi.run(FakeBoard(SOCCFG, capture), TRANSMON.model_copy(update={"time_of_flight_us": 0.45}), RabiParams(**BASE, sweep="amplitude", start=0.0, stop=1.0)))
 
     assert window_start_us(programs[0]) == pytest.approx(0.45, abs=0.002)
+
+
+def plays_for_hours(program):
+    """The program repeats its shot for far longer than anyone watches a scope (at least 1e12 shots)."""
+    return np.prod([float(n) for n in program.loop_dims]) >= 1e12
+
+
+def marker_at_shot_start(program):
+    """PMOD0_0 goes high once per shot, when the qubit pulse starts."""
+    markers = [m for m in program.macro_list if type(m).__name__ == "Trigger" and m.pins]
+    return len(markers) == 1 and markers[0].t == 0
+
+
+@pytest.mark.parametrize("sweep, at, param, expected", [
+    ("amplitude", {"scope_gain": 0.37}, "gain", 0.37),
+    ("length", {"scope_length_us": 0.25}, "length", 0.25),
+])
+def test_the_scope_sequence_repeats_one_rabi_shot_at_the_value_typed(sweep, at, param, expected):
+    params = RabiParams(**BASE, sweep=sweep, start=0.0, stop=1.0, **at)
+
+    program = Rabi.sequence(SOCCFG, TRANSMON, params)
+
+    assert program.get_pulse_param("qubit", param) == pytest.approx(expected, abs=0.005)
+    assert program.get_pulse_param("readout", "gain") == pytest.approx(params.readout_gain, abs=0.001)
+    assert plays_for_hours(program)
+    assert marker_at_shot_start(program)

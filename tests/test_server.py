@@ -199,35 +199,49 @@ def test_rabi_declares_its_plots_and_the_fit_result_it_can_store(client):
     assert rabi["info_sets"] == {"π-pulse gain": "pi_gain"}
 
 
-@pytest.mark.parametrize("tone, expected_mode", [
-    ({"mode": "continuous"}, "periodic"),
-    ({"mode": "pulsed", "pulse_length_us": 2.0, "period_us": 10.0}, "oneshot"),
-])
-def test_controller_sends_a_tone_on_a_real_output_to_check_it_on_a_scope(tmp_path, tone, expected_mode):
+def test_controller_sends_a_tone_on_a_real_output_to_check_it_on_a_scope(tmp_path):
     board = FakeBoard(SOCCFG, flat_response)
     app = create_app(board, data_dir=tmp_path / "data", profiles_dir=tmp_path / "profiles")
     with TestClient(app) as client:
         client.post("/api/control", headers=as_client("alice"))
         client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
 
-        response = client.post("/api/tone", json={"chip": "Loopback", "rf_mhz": 500.0, "gain": 0.4, **tone},
+        response = client.post("/api/tone", json={"chip": "Loopback", "rf_mhz": 500.0, "gain": 0.4},
                                headers=as_client("alice"))
 
         assert response.status_code == 200
-        assert board.playing.pulses["tone"].params["mode"] == expected_mode
+        assert board.playing.pulses["tone"].params["mode"] == "periodic"
         assert board.playing.get_pulse_param("tone", "freq") == pytest.approx(500.0, abs=0.001)
-        if tone["mode"] == "pulsed":
-            assert board.playing.get_pulse_param("tone", "length") == pytest.approx(2.0, abs=0.01)
-            marker = next(m for m in board.playing.macro_list if type(m).__name__ == "Trigger")
-            assert marker.width == pytest.approx(2.0)  # the PMOD0_0 marker lasts as long as the RF pulse
 
 
-def test_a_pulse_train_needs_a_period_longer_than_the_pulse(client):
+def test_controller_plays_a_rabi_shot_on_repeat_to_check_its_pulses_on_a_scope(tmp_path):
+    board = FakeBoard(SOCCFG, flat_response)
+    app = create_app(board, data_dir=tmp_path / "data", profiles_dir=tmp_path / "profiles")
+    with TestClient(app) as client:
+        client.post("/api/control", headers=as_client("alice"))
+        client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
+        params = {"qubit_freq_mhz": 400.0, "readout_freq_mhz": 150.0, "scope_gain": 0.3}
+
+        response = client.post("/api/sequence", json={"measurement": "rabi", "chip": "Loopback", "params": params},
+                               headers=as_client("alice"))
+
+        assert response.status_code == 200
+        assert response.json()["tone"]["mode"] == "sequence"
+        assert board.playing.get_pulse_param("qubit", "gain") == pytest.approx(0.3, abs=0.001)
+        client.post("/api/tone/off", headers=as_client("alice"))
+        assert board.playing is None
+
+
+def test_a_sequence_with_bad_parameters_is_refused_with_a_reason(client):
     client.post("/api/control", headers=as_client("alice"))
     client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
-    tone = {"chip": "Loopback", "rf_mhz": 500.0, "mode": "pulsed", "pulse_length_us": 5.0, "period_us": 4.0}
+    params = {"qubit_start_mhz": 300.0, "qubit_stop_mhz": 500.0, "readout_freq_mhz": 150.0}  # no qubit frequency
 
-    assert client.post("/api/tone", json=tone, headers=as_client("alice")).status_code == 422
+    response = client.post("/api/sequence", json={"measurement": "two_tone", "chip": "Loopback", "params": params},
+                           headers=as_client("alice"))
+
+    assert response.status_code == 422
+    assert "Qubit frequency" in str(response.json()["detail"])
 
 
 def test_cw_time_runs_until_stopped_and_saves_every_sweep(tmp_path):
@@ -361,10 +375,11 @@ def test_fields_say_when_they_apply(client):
     assert rabi["sigma_us"]["shown_when"] == {"sweep": "amplitude"}
 
 
-def test_only_pulsed_qubit_measurements_offer_the_output_tone(client):
+def test_only_pulsed_qubit_measurements_offer_a_scope_sequence(client):
     measurements = client.get("/api/measurements").json()
 
-    assert {k for k, m in measurements.items() if m["output_tone"]} == {"two_tone", "rabi"}
+    assert {k for k, m in measurements.items() if m["sequence"]} == {"two_tone", "rabi"}
+    assert measurements["rabi"]["params"]["properties"]["scope_gain"]["group"] == "Output"
 
 
 def test_cw_time_runs_with_a_run_key_and_the_others_with_run_sweep(client):
@@ -416,3 +431,19 @@ def test_deleting_an_unknown_chip_says_so(client):
     client.post("/api/control", headers=as_client("alice"))
 
     assert client.delete("/api/profiles/Nope", headers=as_client("alice")).status_code == 404
+
+
+def test_a_two_tone_sequence_does_not_need_the_sweep_but_a_run_does(client):
+    client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
+    params = {"readout_freq_mhz": 150.0, "scope_qubit_freq_mhz": 400.0}  # no Qubit start / stop
+
+    sequence = client.post("/api/sequence", json={"measurement": "two_tone", "chip": "Loopback", "params": params},
+                           headers=as_client("alice"))
+    client.post("/api/tone/off", headers=as_client("alice"))
+    run = client.post("/api/runs", json={"measurement": "two_tone", "chip": "Loopback", "params": params},
+                      headers=as_client("alice"))
+
+    assert sequence.status_code == 200
+    assert run.status_code == 422
+    assert "qubit_start_mhz" in str(run.json()["detail"])  # the page shows it as "Qubit start"

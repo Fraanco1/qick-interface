@@ -30,7 +30,7 @@ The app names ports as they are labelled on the board.
 | ADC_C | readout 1 | same as ADC_D |
 | ADC_B | readout 2 | same, but its buffer has a 4096-sample weights memory; windows longer than 7.4 µs are untested. Prefer ADC_D or ADC_C. |
 | ADC_A | time tagger | not a readout; the app does not use it |
-| PMOD0_0 | digital output, 1.8 V logic (LVCMOS18, FPGA pin AF16) | marker for the oscilloscope: high while each pulse of the pulsed Output tone plays. Which header pin it is has not been checked yet. |
+| PMOD0_0 | digital output, 1.8 V logic (LVCMOS18, FPGA pin AF16) | marker for the oscilloscope: high while each qubit pulse of an Output sequence (two-tone, Rabi) plays; during runs, a short pulse when each readout window opens. Which header pin it is has not been checked yet. |
 | PMOD0_1–7 | digital outputs | not used yet |
 
 DAC_A and DAC_B share a clock group, so the two outputs stay phase-locked, which the I/Q output path relies on. ADC_D, ADC_C and ADC_B are also clock-locked.

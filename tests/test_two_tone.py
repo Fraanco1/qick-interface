@@ -6,6 +6,7 @@ from qick import QickConfig
 
 from qick_interface.board import FakeBoard
 from qick_interface.measurements.two_tone import TwoTone, TwoToneParams
+from qick_interface.frequency import drive_rf_from_if
 from qick_interface.profiles import SetupProfile
 
 SOCCFG = QickConfig(str(Path(__file__).parent / "fixtures" / "soccfg_rfsoc4x2.json"))
@@ -69,3 +70,33 @@ def test_the_window_opens_after_the_setups_time_of_flight():
     list(TwoTone.run(FakeBoard(SOCCFG, capture), TRANSMON.model_copy(update={"time_of_flight_us": 0.45}), TwoToneParams(qubit_start_mhz=9900.0, qubit_stop_mhz=10200.0, points=11, readout_freq_mhz=7000.0, rounds=1)))
 
     assert window_start_us(programs[0]) == pytest.approx(0.45, abs=0.002)
+
+
+def plays_for_hours(program):
+    """The program repeats its shot for far longer than anyone watches a scope (at least 1e12 shots)."""
+    return np.prod([float(n) for n in program.loop_dims]) >= 1e12
+
+
+def marker_at_shot_start(program):
+    """PMOD0_0 goes high once per shot, when the qubit pulse starts."""
+    markers = [m for m in program.macro_list if type(m).__name__ == "Trigger" and m.pins]
+    return len(markers) == 1 and markers[0].t == 0
+
+
+def test_the_scope_sequence_repeats_one_two_tone_shot_at_the_qubit_frequency_typed():
+    params = TwoToneParams(qubit_start_mhz=9900.0, qubit_stop_mhz=10200.0, readout_freq_mhz=7000.0,
+                           scope_qubit_freq_mhz=10050.0)
+
+    program = TwoTone.sequence(SOCCFG, TRANSMON, params)
+
+    qubit_rf = drive_rf_from_if(TRANSMON, program.get_pulse_param("qubit", "freq"))
+    assert qubit_rf == pytest.approx(10050.0, abs=0.01)
+    assert plays_for_hours(program)
+    assert marker_at_shot_start(program)
+
+
+def test_the_scope_sequence_needs_a_qubit_frequency():
+    params = TwoToneParams(qubit_start_mhz=9900.0, qubit_stop_mhz=10200.0, readout_freq_mhz=7000.0)
+
+    with pytest.raises(ValueError, match="Qubit frequency"):
+        TwoTone.sequence(SOCCFG, TRANSMON, params)

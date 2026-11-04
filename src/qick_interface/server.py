@@ -41,7 +41,7 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None) -> FastAPI:
         return {key: {"name": m.name, "params": m.Params.model_json_schema(), "x_axis": m.x_axis,
                       "plots": m.plots, "marker_sets": m.marker_sets, "info_sets": m.info_sets,
                       "setup_sets": getattr(m, "setup_sets", {}), "setup_label": getattr(m, "setup_label", ""),
-                      "output_tone": getattr(m, "output_tone", False), "run_key": getattr(m, "run_key", "Run sweep"),
+                      "sequence": hasattr(m, "sequence"), "run_key": getattr(m, "run_key", "Run sweep"),
                       "setup_requires": getattr(m, "setup_requires", {})}
                 for key, m in MEASUREMENTS.items()}
 
@@ -123,6 +123,30 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None) -> FastAPI:
         except Busy as e:
             raise HTTPException(409, str(e))
         except (FrequencyError, LoError) as e:
+            raise HTTPException(422, str(e))
+        return session.state()
+
+    @app.post("/api/sequence")
+    def sequence_on(run: RunRequest, x_client_id: str = Header()):
+        """A pulsed measurement's shot at one point (its Output menu), repeated until Off, for a scope."""
+        profile = load_profiles(profiles_dir).get(run.chip)
+        if profile is None:
+            raise HTTPException(404, f"No setup profile for chip {run.chip!r}.")
+        m = MEASUREMENTS.get(run.measurement)
+        if not hasattr(m, "sequence"):
+            raise HTTPException(404, f"{run.measurement!r} has no sequence to play.")
+        try:
+            params = m.Params.model_validate(run.params, context={"sequence": True})
+            program = m.sequence(board.soccfg, profile, params)
+            session.play_tone(x_client_id, program, {"mode": "sequence", "measurement": m.name}, profile)
+        except NotController as e:
+            raise HTTPException(403, str(e))
+        except Busy as e:
+            raise HTTPException(409, str(e))
+        except ValidationError as e:
+            raise HTTPException(422, [{"field": ".".join(map(str, err["loc"])), "message": err["msg"]}
+                                      for err in e.errors()])
+        except (ValueError, FrequencyError, LoError) as e:
             raise HTTPException(422, str(e))
         return session.state()
 

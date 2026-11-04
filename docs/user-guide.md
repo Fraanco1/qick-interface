@@ -155,19 +155,21 @@ Measurement: **Rabi**. Qubit and readout frequencies are filled in from steps 1 
 
 When the fit explains the data, the screen shows the π-pulse (gain, or length in µs). For an amplitude sweep, **Marker → Store π-pulse gain** saves it. If there is no clear oscillation, no π-pulse is shown, rather than a meaningless number.
 
-## Sending a tone (Output)
+## Checking the pulses on a scope (Output)
 
-**Output** (in two-tone and Rabi) sends a tone on the selected chip's output path, for checking pulses, cables, mixers and levels with an oscilloscope or spectrum analyzer. For a continuous tone at the readout, CW Time does the same while it measures. It works for every chip; on the I/Q path the tone goes out on both DACs with the saved I/Q calibration.
+**Output** (in two-tone and Rabi) plays the measurement's own shot, the qubit pulse and then the readout pulse, over and over at one point instead of sweeping. Every other setting comes from the measurement's menus (frequencies, gains, lengths, repetition delay), so the scope shows exactly what a run plays.
 
-| Field | Meaning |
-|---|---|
-| Frequency | RF in MHz; the setup's LO and sideband give the board frequency. |
-| Gain | 0–1, fraction of full DAC scale. |
-| Mode | **Continuous**, or **Pulsed**: a pulse train with **Pulse length** and **Period** in µs. |
+| Measurement | Field in Output | The point played |
+|---|---|---|
+| Rabi, amplitude sweep | Qubit gain (starts from the chip's π-pulse gain) | The Gaussian qubit pulse at that gain |
+| Rabi, length sweep | Qubit pulse length (µs) | The flat qubit pulse of that length |
+| Two-tone | Qubit frequency (RF, MHz; starts from the chip's qubit frequency) | The qubit pulse at that frequency |
 
-In pulsed mode, digital output **PMOD0_0** is high while each pulse plays (same start and length); connect it to the oscilloscope's trigger input. It is 1.8 V logic: trigger at about 0.9 V. The RF pulse may appear shifted from the marker by the DAC's latency (tens to a few hundred ns); compare both on the scope.
+**Play sequence** starts it. Edits in any menu are applied at once while it plays. The status bar shows **Sequence** and the measurement. **Off** or starting a run stops it.
 
-**Tone on** starts it; edits are applied immediately while it plays. The status bar shows **Tone** or **Pulses** and the frequency. **Tone off** or starting a run turns it off.
+Digital output **PMOD0_0** is high while each qubit pulse plays; connect it to the oscilloscope's trigger input. It is 1.8 V logic: trigger at about 0.9 V. The RF pulse may appear shifted from the marker by the DAC's latency (tens to a few hundred ns).
+
+Where the pulses come out depends on the setup: with a **Control line**, the qubit pulse is on that DAC and the readout pulse on the readout output; without one, both are on the readout output (or the I/Q pair).
 
 ## Scale
 
