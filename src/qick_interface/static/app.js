@@ -60,8 +60,8 @@ function formatFreq(mhz) {
 
 // Tick label for the x axis: frequencies in GHz/MHz, anything else as a plain number,
 // with just enough decimals for one division.
-function xTick(v, div) {
-  const ghz = xUnit() === "MHz" && Math.abs(v) >= 1000, val = ghz ? v / 1000 : v, d = ghz ? div / 1000 : div;
+function xTick(v, div, ghz) {
+  const val = ghz ? v / 1000 : v, d = ghz ? div / 1000 : div;
   return minus(val.toFixed(Math.max(0, Math.ceil(-Math.log10(d) + 0.001))));
 }
 
@@ -195,10 +195,10 @@ function markerMenu() {
     keep.dataset.control = "1";
     nodes.push(keep);
   }
-  const setupSets = state.measurements[state.data?.measurement]?.setup_sets ?? {};
+  const shown = state.measurements[state.data?.measurement], setupSets = shown?.setup_sets ?? {};
   const results = Object.entries(setupSets).filter(([name]) => state.data?.info?.[name] !== undefined);
   if (results.length) {
-    const keep = button("Store RX calibration in setup", () => saveSetup(state.data.chip,
+    const keep = button(`Store in setup: ${shown.setup_label}`, () => saveSetup(state.data.chip,
       Object.fromEntries(results.map(([name, key]) => [key, +state.data.info[name].toPrecision(6)]))));
     keep.dataset.control = "1";
     nodes.push(keep);
@@ -331,6 +331,8 @@ const PROFILE_FIELDS = [
   ["q_dac", "Q output", ["DAC_A", "DAC_B"], null, null, "iq"],
   ["iq_phase_deg", "Q phase offset", "number", "°", "90 for an ideal mixer.", "I/Q cal"],
   ["iq_gain_ratio", "Q / I gain", "number", null, "1 for an ideal mixer.", "I/Q cal"],
+  ["electrical_delay_ns", "Electrical delay", "number", "ns",
+    "Subtracted from the resonator sweep's phase. Empty: fitted on each sweep. Store it from a wide sweep (Marker menu)."],
   ["control_dac", "Control line", ["", "DAC_A", "DAC_B"], null,
     "A DAC of its own for the qubit tone, with no mixer: the qubit frequency is the DAC frequency."],
   ["return_path", "Return path", ["real", "iq"], null, "I/Q: an I/Q mixer into two ADCs, combined in software."],
@@ -345,7 +347,7 @@ const NUMBER_FIELDS = ["iq_phase_deg", "iq_gain_ratio", "rx_gain_ratio", "rx_pha
 
 const NEW_PROFILE = { chip: "", chip_type: "transmon", lo_mhz: null, sideband: "upper", output_path: "real",
   readout_dac: "DAC_B", i_dac: "DAC_A", q_dac: "DAC_B", iq_phase_deg: 90, iq_gain_ratio: 1, readout_adc: "ADC_D",
-  control_dac: null, return_path: "real", i_adc: "ADC_D", q_adc: "ADC_C", rx_gain_ratio: 1, rx_phase_deg: 0, rx_delay_ps: 0 };
+  electrical_delay_ns: null, control_dac: null, return_path: "real", i_adc: "ADC_D", q_adc: "ADC_C", rx_gain_ratio: 1, rx_phase_deg: 0, rx_delay_ps: 0 };
 
 // The Setup and I/Q cal menus edit the same profile; each shows its own fields and saves all of them.
 function setupMenu(menu) {
@@ -386,6 +388,7 @@ function setupMenu(menu) {
     const profile = Object.fromEntries(Object.entries(controls).map(([k, c]) => [k, c.value]));
     profile.lo_mhz = profile.lo_mhz === "" ? null : Number(profile.lo_mhz);
     profile.control_dac = profile.control_dac || null;
+    profile.electrical_delay_ns = profile.electrical_delay_ns === "" ? null : Number(profile.electrical_delay_ns);
     for (const k of NUMBER_FIELDS) profile[k] = Number(profile[k]);
     try {
       await api("PUT", `/api/profiles/${encodeURIComponent(profile.chip)}`, profile);
@@ -539,7 +542,8 @@ function makePlot(el, color, nTraces, k) {
     axes: [
       { ...axis, splits: tenDivisions, size: 30, values: (u, vals) => {
           const every = u.width < 500 ? 5 : 2, div = (vals[10] - vals[0]) / 10;
-          return vals.map((v, k) => (k % every ? "" : xTick(v, div)));
+          const ghz = xUnit() === "MHz" && Math.max(...vals.map(Math.abs)) >= 1000;  // one unit for the whole axis
+          return vals.map((v, k) => (k % every ? "" : xTick(v, div, ghz)));
         } },
       { ...axis, splits: tenDivisions, size: 56,
         values: (u, vals) => vals.map((v) => minus(v.toFixed(decimalsFor((vals[10] - vals[0]) / 10)))) },

@@ -35,6 +35,7 @@ Each chip has a *setup profile*: how it is wired. Open **Setup**:
 | Output path | Real: the tone leaves on one DAC. I/Q: the same tone on two DACs, 90° apart, into an I/Q mixer. |
 | Readout output | The DAC used on the real path. |
 | I output, Q output | The DACs used on the I/Q path (normally I = DAC_A, Q = DAC_B). |
+| Electrical delay | Subtracted from the resonator sweep's phase, in ns. Empty: fitted on each sweep. Filled from a wide sweep (see [Resonator sweep](#1-resonator-sweep)). |
 | Control line | None, or a DAC of its own for the qubit tone, with no mixer: the qubit frequency you type is the DAC frequency (up to 4915 MHz). Used by two-tone and Rabi. It can't be a DAC the readout output already uses. |
 | Return path | Real: the signal comes back through a real mixer into one ADC. I/Q: through an I/Q mixer into two ADCs, combined in software, which rejects the image band (see [RX I/Q calibration](#rx-iq-calibration-iq-return-only)). |
 | Readout input | The ADC that receives the signal (real return path). |
@@ -98,7 +99,14 @@ On the bench loopback both modes give the same |S21| and phase (amplitude ratio 
 
 - **Tr1:** |S21| in dB. It is relative, not calibrated: the received signal in ADC units divided by the gain, so it does not move when you change the gain (like a PNA-X). The resonance's frequency, width, depth and Q are what it measures well; the absolute level includes the whole chain.
   How it is computed, and what it can and can't be compared with: [How S21 is computed](s21.md).
-- **Tr2:** phase in degrees, with the cable's electrical delay fitted and removed, wrapped to ±180°. With the lower sideband (RF below the LO) the mixer mirrors the phase; the app undoes that, so the resonance turns the same way on either sideband.
+- **Tr2:** phase in degrees, with the electrical delay removed (see below), wrapped to ±180°. With the lower sideband (RF below the LO) the mixer mirrors the phase; the app undoes that, so the resonance turns the same way on either sideband.
+
+**Electrical delay.** The signal takes time τ to travel from the DAC to the ADC (cables, cryostat lines, and about 216 ns inside the board), which makes the phase fall by 360° every 1/τ of frequency, a steep ramp that hides the resonance. The app removes it by multiplying S21 by e^{+j2π·f·τ} (|S21| is unchanged) and centring the phase on 0°. Every sweep shows its own fitted delay on screen (**Electrical delay (ns)**). On a narrow sweep around a resonance that fit is tilted by the resonance's own phase turn, so:
+
+1. Once per setup, run a **wide** sweep, for example a few hundred MHz, with points closer than 2 MHz apart, where the resonances are a small part of the data.
+2. **Marker → Store in setup: electrical delay**.
+
+From then on every resonator sweep of that chip subtracts the stored delay, so the resonance's phase keeps its true shape. Clear **Electrical delay** in **Setup** to go back to fitting each sweep. Measure it again after changing cables or the LO. The saved `s21` keeps the delay; only the phase trace is corrected.
 
 Then **Marker → Min** puts the marker on the dip, and **Marker → Readout frequency** stores it in the chip parameters.
 

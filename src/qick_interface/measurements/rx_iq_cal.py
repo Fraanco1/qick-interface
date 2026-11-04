@@ -29,6 +29,7 @@ class RxIqCal:
     marker_sets = None
     info_sets = {}
     setup_sets = {"Q/I gain": "rx_gain_ratio", "Q phase (°)": "rx_phase_deg", "I/Q delay (ps)": "rx_delay_ps"}
+    setup_label = "RX calibration"
 
     @classmethod
     def run(cls, board, profile: SetupProfile, params: RxIqCalParams,

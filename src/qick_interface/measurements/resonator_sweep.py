@@ -62,6 +62,8 @@ class ResonatorSweep:
     plots = [{"title": "S21 LogMag", "unit": "dB", "traces": ["|S21| (dB)"]},
              {"title": "S21 Phase", "unit": "°", "traces": ["Phase (°)"]}]
     info_sets = {}
+    setup_sets = {"Electrical delay (ns)": "electrical_delay_ns"}  # fit result -> setup field
+    setup_label = "electrical delay"
 
     @staticmethod
     def if_axis(program) -> np.ndarray:
@@ -98,14 +100,25 @@ class ResonatorSweep:
             s21 = received_s21(iq, program, "probe", profile)
             with np.errstate(divide="ignore"):  # no signal gives -inf dB, shown as a gap
                 mag_db = 20 * np.log10(np.abs(s21))
+            fitted_ns = _fit_delay_ns(if_mhz, s21)
+            delay_ns = fitted_ns if profile.electrical_delay_ns is None else profile.electrical_delay_ns
             yield Update(i, params.rounds, rf, {
                 "|S21| (dB)": mag_db,
-                "Phase (°)": np.degrees(_remove_electrical_delay(if_mhz, s21)),
-            }, raw={"s21": s21, "if_mhz": if_mhz})
+                "Phase (°)": np.degrees(_remove_delay(if_mhz, s21, delay_ns)),
+            }, raw={"s21": s21, "if_mhz": if_mhz}, info={"Electrical delay (ns)": fitted_ns})
 
 
-def _remove_electrical_delay(if_mhz, s21):
-    """Phase with the best-fit cable delay and offset removed, wrapped to ±π."""
-    phase = np.unwrap(np.angle(s21))
-    slope, offset = np.polyfit(if_mhz, phase, 1)
-    return np.angle(np.exp(1j * (phase - slope * if_mhz - offset)))
+def _fit_delay_ns(if_mhz, s21) -> float:
+    """The sweep's own electrical delay: the slope of its unwrapped phase, −2π·f·τ. Reliable on a wide
+    sweep with points closer than 1/(2τ) (2.3 MHz for the board's 216 ns), where a resonance is a small
+    part of the data; on a narrow sweep the resonance's phase turn tilts it."""
+    slope = np.polyfit(if_mhz, np.unwrap(np.angle(s21)), 1)[0]  # rad/MHz
+    return -slope / (2 * np.pi) * 1e3
+
+
+def _remove_delay(if_mhz, s21, delay_ns):
+    """Phase with the delay and a constant offset removed, wrapped to ±π, like a PNA-X's Electrical Delay."""
+    z = s21 * np.exp(2j * np.pi * np.asarray(if_mhz) * delay_ns * 1e-3)
+    signal = np.abs(z) > 0  # points without signal don't count towards the offset
+    offset = np.angle(np.mean(z[signal] / np.abs(z[signal]))) if signal.any() else 0.0
+    return np.angle(z * np.exp(-1j * offset))

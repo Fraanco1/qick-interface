@@ -283,3 +283,9 @@ def test_a_control_line_cannot_share_the_readout_dac(client):
 
     assert response.status_code == 422
     assert "control line" in response.text
+
+
+def test_resonator_sweep_can_store_its_electrical_delay_in_the_setup(client):
+    sweep = client.get("/api/measurements").json()["resonator_sweep"]
+
+    assert sweep["setup_sets"] == {"Electrical delay (ns)": "electrical_delay_ns"}

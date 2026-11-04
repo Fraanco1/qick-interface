@@ -108,6 +108,10 @@ _Avoid_: round (a round is one pass of averaging in the other measurements), fra
 The time over which the board averages the returned signal into one I/Q value; the app's equivalent of the PNA-X's IF bandwidth (IF BW ≈ 1 / window).
 _Avoid_: IF bandwidth, integration time, acquisition length
 
+**Electrical delay**:
+The travel time τ from DAC to ADC, which makes the phase fall linearly with frequency; removed by multiplying S21 by e^{+j2π·f·τ}. Stored per setup from a wide sweep, or fitted per sweep.
+_Avoid_: cable delay (it includes the board), group delay, latency
+
 **Two-tone spectroscopy**:
 A measurement that sweeps the qubit tone frequency while reading out at a fixed resonator frequency.
 _Avoid_: qubit spectroscopy, pump-probe

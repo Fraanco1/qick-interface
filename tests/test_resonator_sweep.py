@@ -122,3 +122,35 @@ def test_lower_sideband_shows_the_chip_phase_not_its_mirror_image():
     u = list(ResonatorSweep.run(FakeBoard(SOCCFG, simulate), lower, params))[-1]
 
     assert u.raw["s21"] == pytest.approx(response(u.x), abs=1e-3)
+
+
+def chip_behind_cable(program, profile=PROFILE, delay_us=0.216):
+    """A notch at RF 6150 MHz behind 216 ns of electrical delay (like the board's own latency)."""
+    f = ResonatorSweep.if_axis(program)
+    return [chip_seen_by_the_board(profile, gain_scales=False)[0](profile.lo_mhz + f)
+            * np.exp(-2j * np.pi * f * delay_us)]
+
+
+def phase_error(u):
+    """How far the phase trace is from the chip's own phase, apart from a constant offset (°)."""
+    response, _ = chip_seen_by_the_board(PROFILE)
+    diff = np.exp(1j * np.radians(u.traces["Phase (°)"])) / np.exp(1j * np.angle(response(u.x)))
+    return np.degrees(np.ptp(np.unwrap(np.angle(diff))))
+
+
+def test_every_sweep_reports_its_fitted_electrical_delay():
+    u = run(FakeBoard(SOCCFG, chip_behind_cable), rf_start_mhz=6050.0, rf_stop_mhz=7050.0, points=2001, rounds=1)[-1]
+
+    assert u.info["Electrical delay (ns)"] == pytest.approx(216.0, abs=0.5)
+
+
+def test_a_stored_delay_keeps_the_resonance_phase_on_a_narrow_sweep():
+    stored = PROFILE.model_copy(update={"electrical_delay_ns": 216.0})
+    narrow = dict(rf_start_mhz=6145.0, rf_stop_mhz=6155.0, points=401, rounds=1)
+
+    fitted = run(FakeBoard(SOCCFG, chip_behind_cable), **narrow)[-1]
+    kept = list(ResonatorSweep.run(FakeBoard(SOCCFG, chip_behind_cable), stored,
+                                   ResonatorSweepParams(**narrow)))[-1]
+
+    assert phase_error(kept) < 0.1    # only a constant offset removed
+    assert phase_error(fitted) > 5    # the per-sweep fit tilts the resonance's own phase

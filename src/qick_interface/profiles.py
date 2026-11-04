@@ -27,6 +27,8 @@ class SetupProfile(BaseModel):
     rx_gain_ratio: float = Field(1.0, gt=0, le=2)
     rx_phase_deg: float = Field(0.0, ge=-180, le=180)
     rx_delay_ps: float = 0.0
+    # Electrical delay subtracted from resonator-sweep phases (stored from a wide sweep); None: fitted per sweep
+    electrical_delay_ns: float | None = None
     # A separate line for the qubit tone, straight from its own DAC (no mixer: RF = DAC frequency)
     control_dac: Literal["DAC_A", "DAC_B"] | None = None
 
