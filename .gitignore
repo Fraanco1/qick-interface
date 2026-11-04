@@ -5,3 +5,7 @@ data/
 .pytest_cache/
 board/wheels/
 profiles/
+
+# Claude Code instructions and settings (local only)
+CLAUDE.md
+.claude/
