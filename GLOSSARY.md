@@ -43,7 +43,7 @@ The transmission line through the chip whose resonators are measured.
 _Avoid_: feedline, probe line
 
 **Control line**:
-A separate line carrying microwave tones to drive the qubit; only fluxonium chips have one.
+A separate line carrying microwave tones to drive the qubit, fed straight from a DAC of its own (no mixer). Fluxonium chips have one; any setup may use one.
 _Avoid_: drive line, flux line
 
 **Flux bias**:
@@ -89,7 +89,7 @@ The tone sent through the readout line to probe a resonator.
 _Avoid_: probe tone, measurement tone
 
 **Qubit tone**:
-The tone that drives the qubit transition, on the readout line (transmon) or control line (fluxonium).
+The tone that drives the qubit transition, on the control line if the setup has one, otherwise on the readout line.
 _Avoid_: control tone, drive tone, pump
 
 **Resonator sweep**:

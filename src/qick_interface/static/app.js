@@ -331,6 +331,8 @@ const PROFILE_FIELDS = [
   ["q_dac", "Q output", ["DAC_A", "DAC_B"], null, null, "iq"],
   ["iq_phase_deg", "Q phase offset", "number", "°", "90 for an ideal mixer.", "I/Q cal"],
   ["iq_gain_ratio", "Q / I gain", "number", null, "1 for an ideal mixer.", "I/Q cal"],
+  ["control_dac", "Control line", ["", "DAC_A", "DAC_B"], null,
+    "A DAC of its own for the qubit tone, with no mixer: the qubit frequency is the DAC frequency."],
   ["return_path", "Return path", ["real", "iq"], null, "I/Q: an I/Q mixer into two ADCs, combined in software."],
   ["readout_adc", "Readout input", ["ADC_B", "ADC_C", "ADC_D"], null, null, "return:real"],
   ["i_adc", "I input", ["ADC_B", "ADC_C", "ADC_D"], null, null, "return:iq"],
@@ -343,7 +345,7 @@ const NUMBER_FIELDS = ["iq_phase_deg", "iq_gain_ratio", "rx_gain_ratio", "rx_pha
 
 const NEW_PROFILE = { chip: "", chip_type: "transmon", lo_mhz: null, sideband: "upper", output_path: "real",
   readout_dac: "DAC_B", i_dac: "DAC_A", q_dac: "DAC_B", iq_phase_deg: 90, iq_gain_ratio: 1, readout_adc: "ADC_D",
-  return_path: "real", i_adc: "ADC_D", q_adc: "ADC_C", rx_gain_ratio: 1, rx_phase_deg: 0, rx_delay_ps: 0 };
+  control_dac: null, return_path: "real", i_adc: "ADC_D", q_adc: "ADC_C", rx_gain_ratio: 1, rx_phase_deg: 0, rx_delay_ps: 0 };
 
 // The Setup and I/Q cal menus edit the same profile; each shows its own fields and saves all of them.
 function setupMenu(menu) {
@@ -353,7 +355,7 @@ function setupMenu(menu) {
     let c;
     if (Array.isArray(kind)) {
       c = document.createElement("select");
-      c.append(...kind.map((v) => new Option(v === "iq" ? "I/Q" : v, v)));
+      c.append(...kind.map((v) => new Option(v === "iq" ? "I/Q" : v === "" ? "None" : v, v)));
     } else {
       c = document.createElement("input"); c.type = kind;
       if (kind === "number") { c.step = "any"; c.inputMode = "decimal"; }
@@ -383,6 +385,7 @@ function setupMenu(menu) {
   const save = button("Save setup", async () => {
     const profile = Object.fromEntries(Object.entries(controls).map(([k, c]) => [k, c.value]));
     profile.lo_mhz = profile.lo_mhz === "" ? null : Number(profile.lo_mhz);
+    profile.control_dac = profile.control_dac || null;
     for (const k of NUMBER_FIELDS) profile[k] = Number(profile[k]);
     try {
       await api("PUT", `/api/profiles/${encodeURIComponent(profile.chip)}`, profile);

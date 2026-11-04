@@ -72,6 +72,8 @@ class _Program(TonesMixin, AveragerProgramV2):
         self.read(cfg, pins=[0], t=cfg["trigger_delay"])
 ```
 
+A qubit tone goes on the chip's control line when the setup has one: put `control_outputs()` in `cfg["control"]`, pass `line="control"` to `add_tone` (and `add_gauss_envelope`), and plan its frequency with `plan_drive()` (x axis: `drive_rf_from_if()`). `play_tone` remembers each tone's line.
+
 Always go through these helpers (`declare_inputs`, `add_readout`, `send_readouts`, `read`) rather than QICK's readout calls, so every measurement works on both return paths.
 
 Rules that keep data correct (details and sources in [research/qick.md](research/qick.md)):
@@ -188,6 +190,6 @@ WebSocket messages have a `type`:
 
 ## Not built yet
 
-- Fluxonium control line (qubit tone on its own DAC) and flux bias, manual first, then a current source driver.
+- Flux bias from the app (it is set by hand on its own coil).
 - LO driver, once the LO is connected to the lab PC.
 - Viewers see the controller's frequency range only in the status bar, not in the form fields.

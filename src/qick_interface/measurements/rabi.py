@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field
 from qick.asm_v2 import AveragerProgramV2, QickSweep1D
 from scipy.optimize import OptimizeWarning, curve_fit
 
-from ..frequency import plan_sweep
-from ..iq import TonesMixin, inputs, outputs, send_readouts
+from ..frequency import plan_drive, plan_sweep
+from ..iq import TonesMixin, control_outputs, inputs, outputs, send_readouts
 from ..profiles import SetupProfile
 from .base import Update, received_s21
 
@@ -45,10 +45,12 @@ class _Program(TonesMixin, AveragerProgramV2):
         self.add_readout(cfg, "ro", freq=cfg["readout_freq"])
         self.add_loop("sweep", cfg["points"])
         if cfg["sweep"] == "amplitude":
-            self.add_gauss_envelope(cfg, "gauss", sigma=cfg["sigma"], length=4 * cfg["sigma"])
-            self.add_tone(cfg, "qubit", freq=cfg["qubit_freq"], gain=cfg["swept"], style="arb", envelope="gauss")
+            self.add_gauss_envelope(cfg, "gauss", sigma=cfg["sigma"], length=4 * cfg["sigma"], line="control")
+            self.add_tone(cfg, "qubit", freq=cfg["qubit_freq"], gain=cfg["swept"], style="arb", envelope="gauss",
+                          line="control")
         else:
-            self.add_tone(cfg, "qubit", freq=cfg["qubit_freq"], gain=cfg["qubit_gain"], length=cfg["swept"])
+            self.add_tone(cfg, "qubit", freq=cfg["qubit_freq"], gain=cfg["qubit_gain"], length=cfg["swept"],
+                          line="control")
         self.add_tone(cfg, "readout", freq=cfg["readout_freq"], gain=cfg["readout_gain"],
                       length=cfg["readout_pulse"])
 
@@ -78,10 +80,11 @@ class Rabi:
     @classmethod
     def run(cls, board, profile: SetupProfile, params: RabiParams,
             should_stop: Callable[[], bool] = lambda: False) -> Iterator[Update]:
-        qubit = plan_sweep(profile, params.qubit_freq_mhz, params.qubit_freq_mhz, drive_only=True)
+        qubit = plan_drive(profile, params.qubit_freq_mhz, params.qubit_freq_mhz)
         readout = plan_sweep(profile, params.readout_freq_mhz, params.readout_freq_mhz)
         program = _Program(board.soccfg, reps=params.averages, final_delay=params.final_delay_us, cfg={
             "outputs": outputs(board.soccfg, profile),
+            "control": control_outputs(board.soccfg, profile),
             "inputs": inputs(board.soccfg, profile),
             "sweep": params.sweep,
             "swept": QickSweep1D("sweep", params.start, params.stop),

@@ -273,3 +273,13 @@ def test_a_setup_with_an_iq_return_path_is_saved(client):
 
     assert client.put("/api/profiles/Loopback", json=iq_return, headers=as_client("alice")).status_code == 200
     assert client.get("/api/profiles").json()["Loopback"]["rx_delay_ps"] == 48.0
+
+
+def test_a_control_line_cannot_share_the_readout_dac(client):
+    client.post("/api/control", headers=as_client("alice"))
+    clash = {**LOOPBACK, "control_dac": "DAC_B"}  # the loopback reads out on DAC_B
+
+    response = client.put("/api/profiles/Loopback", json=clash, headers=as_client("alice"))
+
+    assert response.status_code == 422
+    assert "control line" in response.text

@@ -50,3 +50,20 @@ def test_drive_tones_may_use_the_dac_range_beyond_the_adc_limit():
 
     with pytest.raises(FrequencyError, match="4915.20 MHz"):
         plan_sweep(profile(None), rf_start=4000.0, rf_stop=5000.0, drive_only=True)
+
+
+def test_control_line_tones_go_straight_out_of_the_dac():
+    from qick_interface.frequency import plan_drive
+    fluxonium = SetupProfile(chip="F", chip_type="fluxonium", lo_mhz=6800.0, control_dac="DAC_A")
+
+    plan = plan_drive(fluxonium, 300.0, 900.0)
+
+    assert (plan.if_start, plan.if_stop) == (300.0, 900.0)
+    with pytest.raises(FrequencyError, match="4915"):
+        plan_drive(fluxonium, 300.0, 5000.0)
+
+
+def test_without_a_control_line_the_qubit_tone_goes_through_the_lo():
+    from qick_interface.frequency import plan_drive
+
+    assert plan_drive(profile(6800.0), 10000.0, 10000.0).if_start == pytest.approx(3200.0)

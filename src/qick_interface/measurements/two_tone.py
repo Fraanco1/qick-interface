@@ -5,8 +5,8 @@ import numpy as np
 from pydantic import BaseModel, Field
 from qick.asm_v2 import AveragerProgramV2, QickSweep1D
 
-from ..frequency import plan_sweep, rf_from_if
-from ..iq import TonesMixin, inputs, outputs, send_readouts
+from ..frequency import drive_rf_from_if, plan_drive, plan_sweep
+from ..iq import TonesMixin, control_outputs, inputs, outputs, send_readouts
 from ..profiles import SetupProfile
 from .base import Update, received_s21
 
@@ -38,7 +38,8 @@ class _Program(TonesMixin, AveragerProgramV2):
         self.declare_inputs(cfg, length=cfg["readout_length"])
         self.add_readout(cfg, "ro", freq=cfg["readout_freq"])
         self.add_loop("freq", cfg["points"])
-        self.add_tone(cfg, "qubit", freq=cfg["qubit_freq"], length=cfg["qubit_length"], gain=cfg["qubit_gain"])
+        self.add_tone(cfg, "qubit", freq=cfg["qubit_freq"], length=cfg["qubit_length"], gain=cfg["qubit_gain"],
+                      line="control")
         self.add_tone(cfg, "readout", freq=cfg["readout_freq"], length=cfg["readout_pulse"],
                       gain=cfg["readout_gain"])
 
@@ -67,10 +68,11 @@ class TwoTone:
     @classmethod
     def run(cls, board, profile: SetupProfile, params: TwoToneParams,
             should_stop: Callable[[], bool] = lambda: False) -> Iterator[Update]:
-        qubit = plan_sweep(profile, params.qubit_start_mhz, params.qubit_stop_mhz, drive_only=True)
+        qubit = plan_drive(profile, params.qubit_start_mhz, params.qubit_stop_mhz)
         readout = plan_sweep(profile, params.readout_freq_mhz, params.readout_freq_mhz)
         program = _Program(board.soccfg, reps=params.averages, final_delay=params.final_delay_us, cfg={
             "outputs": outputs(board.soccfg, profile),
+            "control": control_outputs(board.soccfg, profile),
             "inputs": inputs(board.soccfg, profile),
             "qubit_freq": QickSweep1D("freq", qubit.if_start, qubit.if_stop),
             "readout_freq": readout.if_start,
@@ -83,7 +85,7 @@ class TwoTone:
             "trigger_delay": params.trigger_delay_us,
         })
         qubit_if = cls.qubit_if_axis(program)
-        rf = rf_from_if(profile, qubit_if)
+        rf = drive_rf_from_if(profile, qubit_if)
 
         for i, iq in enumerate(board.run(program, params.rounds, should_stop), start=1):
             s21 = received_s21(iq, program, "readout", profile)

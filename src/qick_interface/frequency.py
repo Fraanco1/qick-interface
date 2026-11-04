@@ -50,6 +50,21 @@ def plan_sweep(profile: SetupProfile, rf_start: float, rf_stop: float, drive_onl
     return SweepPlan(if_start, if_stop, lo - sign * if_start, lo - sign * if_stop)
 
 
+def plan_drive(profile: SetupProfile, rf_start: float, rf_stop: float) -> SweepPlan:
+    """IF range for a qubit tone: straight out of its DAC on a control line (RF = DAC frequency),
+    otherwise through the readout line's mixer."""
+    return plan_sweep(_drive_line(profile), rf_start, rf_stop, drive_only=True)
+
+
+def drive_rf_from_if(profile: SetupProfile, if_mhz):
+    """RF of a qubit tone at the chip, for a given DAC frequency."""
+    return rf_from_if(_drive_line(profile), if_mhz)
+
+
+def _drive_line(profile: SetupProfile) -> SetupProfile:
+    return profile.model_copy(update={"lo_mhz": None}) if profile.control_dac else profile
+
+
 def rf_from_if(profile: SetupProfile, if_mhz):
     """RF frequency seen by the chip for a given IF (works on arrays)."""
     if profile.lo_mhz is None:

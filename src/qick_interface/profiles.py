@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class SetupProfile(BaseModel):
@@ -27,6 +27,16 @@ class SetupProfile(BaseModel):
     rx_gain_ratio: float = Field(1.0, gt=0, le=2)
     rx_phase_deg: float = Field(0.0, ge=-180, le=180)
     rx_delay_ps: float = 0.0
+    # A separate line for the qubit tone, straight from its own DAC (no mixer: RF = DAC frequency)
+    control_dac: Literal["DAC_A", "DAC_B"] | None = None
+
+    @model_validator(mode="after")
+    def _control_line_has_its_own_dac(self):
+        used = {self.readout_dac} if self.output_path == "real" else {self.i_dac, self.q_dac}
+        if self.control_dac in used:
+            raise ValueError(f"The control line needs its own DAC; {self.control_dac} already carries the "
+                             "readout output.")
+        return self
 
 
 def load_profiles(directory: Path) -> dict[str, SetupProfile]:

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 from qick import QickConfig
 
 from qick_interface.board import FakeBoard
@@ -29,3 +30,25 @@ def test_dip_appears_at_the_qubit_rf_frequency():
     last = updates[-1]
     assert abs(last.x[np.argmin(last.traces["|S21| (dB)"])] - 10050.0) < 1.0
     assert [u.round for u in updates] == [1, 2]
+
+
+FLUXONIUM = SetupProfile(chip="Fluxonium A", chip_type="fluxonium", lo_mhz=6800.0, readout_dac="DAC_B",
+                         control_dac="DAC_A")
+
+
+def test_control_line_sends_the_qubit_tone_straight_from_its_own_dac():
+    programs = []
+
+    def capture(program):
+        programs.append(program)
+        return qubit_at(500.0, width_mhz=0.5)(program)
+
+    params = TwoToneParams(qubit_start_mhz=400.0, qubit_stop_mhz=600.0, points=401,
+                           readout_freq_mhz=7000.0, rounds=1)
+    last = list(TwoTone.run(FakeBoard(SOCCFG, capture), FLUXONIUM, params))[-1]
+
+    p = programs[0]
+    assert p.pulses["qubit"].gen_chs == [1]    # DAC_A: the control line, no mixer
+    assert p.pulses["readout"].gen_chs == [0]  # DAC_B: the readout line, through the LO
+    assert abs(last.x[np.argmin(last.traces["|S21| (dB)"])] - 500.0) < 1.0  # RF = DAC frequency
+    assert p.get_pulse_param("readout", "freq") == pytest.approx(200.0, abs=1e-3)

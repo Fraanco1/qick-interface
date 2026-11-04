@@ -58,7 +58,7 @@ DAC_B ──▶ real mixer (LO) ──▶ readout line ··· chip ··· ──
 DAC_A ──────────────────────▶ control line (qubit tone, no mixer)
 ```
 
-The app supports the readout half of this today (output path **real**). The control line and the flux bias are not built yet; the flux bias is set by hand.
+In the setup: output path **real**, readout output DAC_B, **Control line DAC_A**. Two-tone and Rabi then send the qubit tone on DAC_A at the frequency you type (no LO, up to 4915 MHz; the board's baluns attenuate below roughly 10–50 MHz), while the readout goes through the LO. The control line can't share a DAC with the readout output. The flux bias (a separate coil) is set by hand, outside the app.
 
 ### Bench loopback (no chip)
 

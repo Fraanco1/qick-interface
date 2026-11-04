@@ -39,6 +39,13 @@ def tone_gain(program, name: str):
     return program.get_pulse_param(name, "gain", as_array=True) / program.cfg["outputs"][0].gain_factor
 
 
+def control_outputs(soccfg, profile: SetupProfile) -> list[_Output]:
+    """The DAC(s) the qubit tone goes out on: the control line's own DAC, else the readout line's."""
+    if profile.control_dac:
+        return [_Output("", gen_channel(soccfg, profile.control_dac), 1.0, 0.0)]
+    return outputs(soccfg, profile)
+
+
 def inputs(soccfg, profile: SetupProfile) -> list[int]:
     """The readout(s) the chip's signal comes back on: [I, Q] on the I/Q return path."""
     if profile.return_path == "iq":
@@ -60,7 +67,8 @@ def send_readouts(asm, cfg, name: str, t=0):
 
 class TonesMixin:
     """For AveragerProgramV2 subclasses: cfg["outputs"] holds the result of outputs(),
-    cfg["inputs"] the result of inputs()."""
+    cfg["inputs"] the result of inputs(), and cfg["control"] (programs with a qubit tone) the result
+    of control_outputs(). A tone added with line="control" goes out there."""
 
     def declare_inputs(self, cfg, length):
         for ro in cfg["inputs"]:
@@ -75,20 +83,21 @@ class TonesMixin:
         self.trigger(ros=cfg["inputs"], pins=pins, t=t)
 
     def declare_outputs(self, cfg):
-        for out in cfg["outputs"]:
-            self.declare_gen(ch=out.gen, nqz=1)
+        for gen in {out.gen for out in cfg["outputs"] + cfg.get("control", [])}:
+            self.declare_gen(ch=gen, nqz=1)
 
-    def add_tone(self, cfg, name, freq, gain, **pulse_args):
+    def add_tone(self, cfg, name, freq, gain, line="outputs", **pulse_args):
         """A constant pulse by default; pass style="arb" and envelope= for a shaped one."""
         pulse_args.setdefault("style", "const")
-        for out in cfg["outputs"]:
+        self._tone_lines = {**getattr(self, "_tone_lines", {}), name: line}
+        for out in cfg[line]:
             self.add_pulse(ch=out.gen, name=name + out.suffix, ro_ch=cfg["inputs"][0], freq=freq,
                            phase=out.phase_deg, gain=gain * out.gain_factor, **pulse_args)
 
-    def add_gauss_envelope(self, cfg, name, sigma, length):
-        for out in cfg["outputs"]:
+    def add_gauss_envelope(self, cfg, name, sigma, length, line="outputs"):
+        for out in cfg[line]:
             self.add_gauss(ch=out.gen, name=name, sigma=sigma, length=length, even_length=True)
 
     def play_tone(self, cfg, name, t=0):
-        for out in cfg["outputs"]:
+        for out in cfg[self._tone_lines[name]]:
             self.pulse(ch=out.gen, name=name + out.suffix, t=t)

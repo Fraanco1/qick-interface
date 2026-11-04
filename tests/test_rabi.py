@@ -53,3 +53,19 @@ def test_no_pi_pulse_is_reported_when_there_is_no_oscillation():
     last = list(Rabi.run(FakeBoard(SOCCFG, noise), TRANSMON, params))[-1]
 
     assert last.info == {}
+
+
+def test_rabi_drives_the_qubit_on_the_control_line_when_the_setup_has_one():
+    fluxonium = SetupProfile(chip="Fluxonium A", chip_type="fluxonium", lo_mhz=6800.0, readout_dac="DAC_B",
+                             control_dac="DAC_A")
+    programs = []
+
+    def capture(program):
+        programs.append(program)
+        return oscillating(0.4)(program)
+
+    params = RabiParams(qubit_freq_mhz=500.0, readout_freq_mhz=7000.0, rounds=1)
+    list(Rabi.run(FakeBoard(SOCCFG, capture), fluxonium, params))
+
+    assert programs[0].pulses["qubit"].gen_chs == [1]
+    assert programs[0].get_pulse_param("qubit", "freq") == pytest.approx(500.0, abs=1e-3)
