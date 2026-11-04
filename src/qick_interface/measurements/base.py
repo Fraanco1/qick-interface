@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from ..iq import rx_imbalance, tone_gain
+from ..power import BoardCalibration
 
 
 @dataclass
@@ -34,3 +35,28 @@ def received_s21(iq: list[np.ndarray], program, tone: str, profile) -> np.ndarra
         s21 = np.conj(iq[0]) if lower else iq[0]
     with np.errstate(divide="ignore", invalid="ignore"):
         return s21 / tone_gain(program, tone)
+
+
+# ---- absolute units (the Units switch): see power.py ----
+ABSOLUTE_DB = {"title": "Power at the ADC", "unit": "dBm", "traces": ["Power (dBm)"]}  # for an S21 LogMag plot
+
+
+def _adc_counts_per_s21(program, tone: str, profile):
+    """The ADC port, its IF, and the factor from |S21| (= |I+jQ| / gain) to |I+jQ| at that ADC. On the I/Q
+    return path the combined signal is the sum of the two ADCs' (Y_I + j·Y_Q), so each ADC sees half."""
+    iq_return = profile.return_path == "iq"
+    adc = profile.i_adc if iq_return else profile.readout_adc
+    if_mhz = program.get_pulse_param(tone, "freq", as_array=True)
+    return adc, if_mhz, tone_gain(program, tone) * (0.5 if iq_return else 1.0)
+
+
+def received_dbm(s21, program, tone: str, profile, calibration: BoardCalibration):
+    """|S21| as the power at the ADC's SMA, in dBm."""
+    adc, if_mhz, k = _adc_counts_per_s21(program, tone, profile)
+    return calibration.adc_dbm(adc, if_mhz, np.abs(s21) * k)
+
+
+def received_mv(values, program, tone: str, profile, calibration: BoardCalibration):
+    """A trace linear in S21 (e.g. Rabi's projection) as peak millivolts at the ADC's SMA."""
+    adc, if_mhz, k = _adc_counts_per_s21(program, tone, profile)
+    return np.asarray(values) * k * calibration.adc_volts_per_count(adc, if_mhz) * 1e3

@@ -9,7 +9,7 @@ from qick.asm_v2 import AveragerProgramV2
 from ..frequency import plan_sweep
 from ..iq import TonesMixin, inputs, outputs, send_readouts
 from ..profiles import SetupProfile
-from .base import Update, received_s21
+from .base import ABSOLUTE_DB, Update, received_dbm, received_s21
 
 
 def _f(default, title, group, unit=None, **kw):
@@ -53,7 +53,8 @@ class CwTime:
     run_key = "Run"  # it runs until Stop; there is no sweep to start
     Params = CwTimeParams
     x_axis = {"title": "Time", "unit": "µs"}
-    plots = [{"title": "S21 LogMag", "unit": "dB", "traces": ["|S21| (dB)"]},
+    drive_fields = {"gain": ("freq_mhz", "readout", "flat")}
+    plots = [{"title": "S21 LogMag", "unit": "dB", "traces": ["|S21| (dB)"], "absolute": ABSOLUTE_DB},
              {"title": "S21 Phase", "unit": "°", "traces": ["Phase (°)"]}]
     marker_sets = None
     info_sets = {}
@@ -85,7 +86,8 @@ class CwTime:
             ends.append(time.time())
             with np.errstate(divide="ignore"):  # no signal gives -inf dB, shown as a gap
                 mag_db = 20 * np.log10(np.abs(s21))
-            yield Update(i, None, x, {"|S21| (dB)": mag_db, "Phase (°)": np.degrees(np.angle(s21))},
+            yield Update(i, None, x, {"|S21| (dB)": mag_db, "Phase (°)": np.degrees(np.angle(s21)),
+                                      "Power (dBm)": received_dbm(s21, program, "probe", profile, board.calibration)},
                          raw={"s21": sweeps, "sweep_end_unix_s": ends}, x_axis=x_axis)
 
 

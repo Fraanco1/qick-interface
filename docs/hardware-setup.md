@@ -158,6 +158,7 @@ Measured on the bench (2026-11-04):
 - PMOD0_0 swings 0 to 3.4 V. Into the scope's 1 MΩ input it rises in about 86 ns but falls in 8 ns and then rings for about 100 ns (down to −1.8 V, back up to +0.8 V): the line is unterminated. Measure its width between 50% points.
 - Keep scope tones at 50–100 MHz to see the carrier; above about 150 MHz only the envelope is reliable.
 - **DAC_B runs ahead of DAC_A** by a delay set at every power-up: 1.55 ns on one, 3.30 ns on the next; service restarts kept it. DAC_A and DAC_B are on different converter tiles, and the firmware has no multi-tile synchronization ([research](research/dac-tile-sync.md)). The setup's **Q delay** corrects it; measure it after each power-up (user guide, "I/Q calibration"). With it, Q−I stays within ±0.6° from 20 to 150 MHz (was 111° to 266°).
+- **Power scales** (`power.py`, user guide "Units"): the bench loopback DAC_B → ADC_D reads 2.4 dB (100 MHz) to 8 dB (2.1 GHz) less than the data sheets predict; with the DAC at its data-sheet value, ADC_D's full scale is +5.6 dBm at 150 MHz rising to +9.3 dBm at 1.95 GHz. The ~1 m loopback cable adds a ±0.7 dB ripple with a 100 MHz period (a standing wave between the ports); sweeps repeat to 0.001 dB.
 - The scope handles one request at a time; a capture for the Q delay triggers on the mains (`LINE`), which always fires.
 
 ### The service owns the board

@@ -9,7 +9,7 @@ from qick.asm_v2 import AsmV2, AveragerProgramV2, QickSweep1D
 from ..frequency import plan_sweep, rf_from_if
 from ..iq import TonesMixin, inputs, outputs, send_readouts
 from ..profiles import SetupProfile
-from .base import Update, received_s21
+from .base import ABSOLUTE_DB, Update, received_dbm, received_s21
 
 
 class ResonatorSweepParams(BaseModel):
@@ -61,7 +61,8 @@ class ResonatorSweep:
     Params = ResonatorSweepParams
     x_axis = {"title": "Frequency", "unit": "MHz"}
     marker_sets = "readout_freq_mhz"  # chip parameter the marker can be stored as
-    plots = [{"title": "S21 LogMag", "unit": "dB", "traces": ["|S21| (dB)"]},
+    drive_fields = {"gain": (("rf_start_mhz", "rf_stop_mhz"), "readout", "flat")}  # gain -> (frequency, line, shape)
+    plots = [{"title": "S21 LogMag", "unit": "dB", "traces": ["|S21| (dB)"], "absolute": ABSOLUTE_DB},
              {"title": "S21 Phase", "unit": "°", "traces": ["Phase (°)"]}]
     info_sets = {}
     setup_sets = {"Electrical delay (ns)": "electrical_delay_ns"}  # fit result -> setup field
@@ -106,6 +107,7 @@ class ResonatorSweep:
             delay_ns = fitted_ns if profile.electrical_delay_ns is None else profile.electrical_delay_ns
             yield Update(i, params.rounds, rf, {
                 "|S21| (dB)": mag_db,
+                "Power (dBm)": received_dbm(s21, program, "probe", profile, board.calibration),
                 "Phase (°)": np.degrees(_remove_delay(if_mhz, s21, delay_ns)),
             }, raw={"s21": s21, "if_mhz": if_mhz}, info={"Electrical delay (ns)": fitted_ns})
 

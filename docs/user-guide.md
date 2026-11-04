@@ -190,6 +190,20 @@ Where the pulses come out depends on the setup: with a **Control line**, the qub
 
 Switching Autoscale off keeps the current view; **Autoscale once** fits the current data and stays fixed. The trace line above each window shows the scale, the reference value and **Fixed** when it is not autoscaling. Settings are kept in your browser, per measurement.
 
+### Units: relative or absolute
+
+**Units** at the top of the Scale menu switches every measurement between:
+
+- **Relative** (default): |S21| in dB and Rabi's Signal in a.u. Only shapes and differences mean something (see `docs/s21.md`).
+- **Absolute at the ADC:** the power arriving at the board's ADC input in **dBm**, and Rabi's Signal in **mV** (peak, 50 Ω). It is measured at the IF, after any receive mixer and amplifiers, so it is the power at the board, not at the chip. Phase traces do not change.
+
+Gain fields also show their drive power at the DAC output, e.g. "≈ −7.0 dBm at DAC_B (data sheet)"; a Gaussian shows its peak. On the I/Q output path it is the I DAC's power, before the mixer.
+
+Both come from the **board calibration** (Setup → **Board** tab), shared by every chip: for each DAC, its output power at gain 1 against frequency; for each ADC, the input power that reads full scale. They start from the data sheets (`docs/research/converter-power-scale.md`). To make them real:
+
+1. **ADC, from the loopback:** cable a DAC to an ADC with a short cable, pick them under **Loopback** and press **Calibrate ADC from loopback** (a few seconds). The ADC's table then follows the DAC's, so a loopback reads the DAC's power (to within the cable's ±0.7 dB ripple, which the calibration averages out). On the bench the ADC came out 2.6–7 dB above the data sheet, rising with frequency.
+2. **DAC, with a signal analyzer (later):** measure the DAC's output at gain 1 at a few frequencies, type them in its table (one "MHz dBm" pair per line), set **Source**, and press **Save board**. Then calibrate the ADC from the loopback again.
+
 ## Markers
 
 - Click a trace to place the marker; the readout box shows its x value and both traces' values there.

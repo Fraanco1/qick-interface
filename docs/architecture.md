@@ -16,6 +16,7 @@ qick-interface/
 │   ├── tone.py                 # continuous tone for I/Q calibration
 │   ├── time_of_flight.py       # the Setup panel's Measure key: when a test pulse reaches the ADC
 │   ├── iq_delay.py             # the I/Q cal tab's Measure key: the Q DAC's lead over I, on the scope
+│   ├── power.py                # board calibration: DAC/ADC power scales (dBm), loopback ADC calibration
 │   ├── fake_scope.py           # oscilloscope stand-in for --fake and tests
 │   ├── measurements/
 │   │   ├── base.py             # what a measurement produces (Update)

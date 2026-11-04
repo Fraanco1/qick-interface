@@ -144,6 +144,7 @@ button, input, select { font: inherit; color: inherit; }
 .field input:disabled, .field select:disabled { background: var(--bezel); color: var(--ink-soft); }
 .field input[aria-invalid="true"] { border-color: var(--stop); }
 .hint { font-size: 12px; color: var(--ink-soft); }
+.hint.drive:empty { display: none; }
 .subhead { margin: 10px 0 0; font-size: 14px; font-weight: 600; }
 .parameters { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 13px; }
 .parameters dt { color: var(--ink-soft); }
@@ -199,3 +200,6 @@ button, input, select { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+.board-table textarea { width: 100%; font: inherit; font-size: 13px; resize: vertical; }
+.board-table { display: grid; gap: 4px; }
+.board-table input[type="text"] { text-align: left; }

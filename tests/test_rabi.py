@@ -34,7 +34,7 @@ def test_amplitude_rabi_finds_the_pi_pulse_gain():
     last = list(Rabi.run(FakeBoard(SOCCFG, oscillating(0.4)), TRANSMON, params))[-1]
 
     assert last.info["π-pulse gain"] == pytest.approx(0.4, abs=0.005)
-    assert set(last.traces) == {"Signal", "Fit", "Phase (°)"}
+    assert set(last.traces) == {"Signal", "Fit", "Phase (°)", "Signal (mV)", "Fit (mV)"}
     assert last.x_axis == {"title": "Qubit gain", "unit": ""}
 
 

@@ -141,8 +141,21 @@ function renderMenuBody() {
     const fields = Object.entries(state.schema.properties).filter(([, p]) => p.group === state.menu && applies(p));
     body.replaceChildren(...fields.map(([key, p]) => paramField(key, p)));
     if (state.menu === "Output" && state.measurements[state.measurement].sequence) body.append(...sequenceKeys());
+    updateDriveHints();
   }
   applyControl();
+}
+
+// Under each gain field, its drive power at the DAC from the board calibration (server: /api/drive-power).
+let driveHintsPending;
+function updateDriveHints() {
+  clearTimeout(driveHintsPending);
+  driveHintsPending = setTimeout(async () => {
+    if (!$("chip").value) return;
+    const hints = await api("POST", "/api/drive-power",
+      { measurement: state.measurement, chip: $("chip").value, params: collectParams() }).catch(() => ({}));
+    for (const el of document.querySelectorAll("#menu-body [data-drive]")) el.textContent = hints[el.dataset.drive] ?? "";
+  }, 150);
 }
 
 // Values typed by the user, per measurement and chip.
@@ -179,8 +192,12 @@ function paramField(key, p) {
     store.set(paramsKey(), params);
     if (p.enum) renderMenuBody();  // a mode change shows that mode's fields
     if (state.tone?.mode === "sequence") playSequence();  // a playing sequence follows every edit
+    updateDriveHints();
   };
-  return field(p.title, input, p.unit, fromChip ? "From the chip parameters." : p.description);
+  const box = field(p.title, input, p.unit, fromChip ? "From the chip parameters." : p.description);
+  const drive = document.createElement("span"); drive.className = "hint drive"; drive.dataset.drive = key;
+  box.append(drive);
+  return box;
 }
 
 function field(title, control, unit, hint) {
@@ -238,7 +255,7 @@ function markerMenu() {
 
 // ---- Scale: like the PNA-X Scale hardkey. Display only, so per browser, per measurement and window. ----
 // Manual: Scale per division, Reference level, and the division it sits on (Reference position, 0 = bottom).
-const scaleKey = (k) => `scale.${state.data?.measurement ?? state.measurement}.${k}`;
+const scaleKey = (k) => `scale.${state.data?.measurement ?? state.measurement}.${plotDefs()[k]?.unit ?? ""}.${k}`;
 const scaleOf = (k) => store.get(scaleKey(k), { auto: true });
 
 function yRange(k, min, max) {
@@ -261,7 +278,13 @@ function setScale(k, s) {
 }
 
 function scaleMenu() {
-  return plotDefs().flatMap((def, k) => {
+  const units = document.createElement("select");
+  units.append(new Option("Relative (dB, a.u.)", "relative"), new Option("Absolute at the ADC (dBm, mV)", "absolute"));
+  units.value = store.get("units", "relative");
+  units.onchange = () => setUnits(units.value);
+  const head = [field("Units", units, null,
+    "Absolute: power at the ADC input, from the board calibration (Setup → Board). Phase is unchanged.")];
+  return [...head, ...plotDefs().flatMap((def, k) => {
     const s = scaleOf(k), title = document.createElement("h3");
     title.className = "subhead"; title.textContent = `Tr${k + 1} ${def.title}`;
     const mode = document.createElement("select");
@@ -284,7 +307,7 @@ function scaleMenu() {
       field("Reference level", number("ref", Number.isFinite), def.unit, "Value at the reference line (▶)."),
       field("Reference position", number("pos", (v) => v >= 0 && v <= 10), "div", "0 = bottom, 10 = top."),
       button("Autoscale once", () => { setScale(k, fittedScale(k)); renderMenuBody(); })];
-  });
+  })];
 }
 
 // Overwrite some fields of a chip's setup profile, e.g. with a calibration result.
@@ -380,9 +403,10 @@ function renderSetupPanel() {
   $("setup-key").setAttribute("aria-expanded", String(open));
   if (!open) { applyControl(); return; }
   const iq = state.profiles[chip]?.output_path === "iq";
-  const tabs = ["Setup", ...(iq ? ["I/Q cal"] : [])];
+  const tabs = ["Setup", ...(iq ? ["I/Q cal"] : []), "Board"];
   if (!tabs.includes(state.setupTab)) state.setupTab = "Setup";
-  $("setup-title").textContent = chip ? `Setup of ${chip}` : "New chip";
+  $("setup-title").textContent = state.setupTab === "Board" ? "Board calibration (every chip)"
+    : chip ? `Setup of ${chip}` : "New chip";
   $("setup-tabs").replaceChildren(...(tabs.length > 1 ? tabs : []).map((name) => {
     const b = document.createElement("button");
     b.type = "button"; b.className = "key"; b.textContent = name; b.role = "tab";
@@ -390,8 +414,73 @@ function renderSetupPanel() {
     b.onclick = () => { state.setupTab = name; renderSetupPanel(); };
     return b;
   }));
-  $("setup-body").replaceChildren(...setupMenu(state.setupTab));
+  $("setup-body").replaceChildren(...(state.setupTab === "Board" ? boardMenu() : setupMenu(state.setupTab)));
   applyControl();
+}
+
+// ---- the board's power calibration: shared by every chip (profiles/board.json, see power.py) ----
+async function loadBoard() { state.board = await api("GET", "/api/board").catch(() => null); }
+
+const pointsText = (table) => table.points.map(([f, dbm]) => `${f} ${dbm}`).join("\n");
+function parsePoints(text) {
+  const points = text.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => l.split(/[\s,;]+/).map(Number));
+  if (!points.length || points.some((p) => p.length !== 2 || p.some((v) => !Number.isFinite(v))))
+    throw new Error("Each line needs a frequency in MHz and a power in dBm, e.g. 550 -1.0");
+  return points.sort((a, b) => a[0] - b[0]);
+}
+
+function boardMenu() {
+  if (!state.board) return [hint("The board calibration could not be loaded.")];
+  const editors = [];
+  const table = (kind, port, label) => {
+    const t = state.board[kind][port];
+    const area = document.createElement("textarea");
+    area.rows = 5; area.value = pointsText(t); area.dataset.control = "1"; area.spellcheck = false;
+    const source = document.createElement("input"); source.type = "text"; source.value = t.source; source.dataset.control = "1";
+    editors.push({ kind, port, area, source });
+    const box = document.createElement("div"); box.className = "board-table";
+    box.append(field(label, area, "MHz dBm"), field("Source", source));
+    return box;
+  };
+  const setup = state.profiles[$("chip").value] ?? NEW_PROFILE;
+  const select = (options, value) => {
+    const c = document.createElement("select"); c.append(...options.map((o) => new Option(o, o)));
+    c.value = value; c.dataset.control = "1"; return c;
+  };
+  const dac = select(Object.keys(state.board.dac_full_scale_dbm), setup.readout_dac ?? "DAC_B");
+  const adc = select(Object.keys(state.board.adc_full_scale_dbm), setup.readout_adc ?? "ADC_D");
+  const save = button("Save board", async () => {
+    try {
+      const next = structuredClone(state.board);
+      for (const { kind, port, area, source } of editors)
+        next[kind][port] = { points: parsePoints(area.value), source: source.value || "entered by hand" };
+      state.board = await api("PUT", "/api/board", next);
+      message("Saved the board calibration.");
+      updateDriveHints();
+    } catch (e) { message(e.message, true); }
+  }, "key-strong");
+  const loopback = button("Calibrate ADC from loopback", async () => {
+    loopback.disabled = true; message("Measuring the loopback…");
+    try {
+      state.board = await api("POST", "/api/board/adc-from-loopback", { dac: dac.value, adc: adc.value });
+      renderSetupPanel();
+      message(`${adc.value} calibrated from ${dac.value}: its table now holds the measured full scale.`);
+    } catch (e) { message(e.message, true); }
+    finally { loopback.disabled = false; applyControl(); }
+  });
+  save.dataset.control = loopback.dataset.control = "1";
+  const dacs = Object.keys(state.board.dac_full_scale_dbm).map((p) => table("dac_full_scale_dbm", p, `${p} output at gain 1`));
+  const adcs = Object.keys(state.board.adc_full_scale_dbm).map((p) => table("adc_full_scale_dbm", p, `${p} full scale`));
+  const heading = (text) => { const h = document.createElement("h3"); h.className = "subhead"; h.textContent = text; return h; };
+  const fields = document.createElement("div"); fields.className = "setup-fields"; fields.append(...dacs, ...adcs);
+  const loop = document.createElement("div"); loop.className = "setup-fields";
+  loop.append(field("From DAC", dac), field("To ADC", adc));
+  const keys = document.createElement("div"); keys.className = "setup-keys"; keys.append(save, loopback);
+  return [fields, heading("Loopback"), loop, keys,
+    hint("Powers at the board's SMA connectors, 50 Ω, against frequency (MHz, dBm per line). DAC: output at gain 1 " +
+      "(flat pulse). ADC: the input that reads full scale. They start from the data sheets; type in a signal " +
+      "analyzer's values when measured. Calibrate ADC from loopback needs a short cable from the DAC to the ADC: " +
+      "it trusts the DAC's table and measures the ADC's. Shared by every chip.")];
 }
 
 function toggleSetup(open = !state.setupOpen) {
@@ -627,8 +716,20 @@ const COLORS = () => {
   return [css.getPropertyValue("--tr1").trim(), css.getPropertyValue("--tr2").trim()];
 };
 
+// Units (Scale menu): relative (dB, a.u.) or absolute at the ADC (dBm, mV), from the board calibration.
+// A plot shows its absolute version when it has one and the data carries those traces (older runs may not).
 function plotDefs(measurement = state.data?.measurement ?? state.measurement) {
-  return state.measurements[measurement].plots;
+  const defs = state.measurements[measurement].plots;
+  if (store.get("units", "relative") !== "absolute") return defs;
+  const has = (d) => !state.data || d.traces.every((t) => t in (state.data.traces ?? {}));
+  return defs.map((d) => (d.absolute && has(d.absolute) ? d.absolute : d));
+}
+
+function setUnits(units) {
+  store.set("units", units);
+  state.plotsFor = null;  // rebuild the plots with the other traces
+  if (state.data) showUpdate(state.data); else traceLines();
+  renderMenuBody();
 }
 
 // Rebuild both plot windows for a measurement's layout (trace count and names differ).
@@ -815,6 +916,7 @@ async function main() {
     traceLines();
   }).observe($("plot-mag").parentElement.parentElement);
 
+  await loadBoard();
   await loadProfiles();  // draws the menus, which depend on the chip's output path
   applyControl();
   connect();

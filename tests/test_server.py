@@ -497,3 +497,47 @@ def test_without_a_scope_the_q_delay_cannot_be_measured(client):
 
     assert r.status_code == 503
     assert "oscilloscope" in r.json()["detail"]
+
+
+def test_the_board_calibration_starts_from_the_data_sheets_and_the_controller_can_replace_it(client):
+    board = client.get("/api/board").json()
+    assert board["dac_full_scale_dbm"]["DAC_B"]["source"] == "data sheet"
+
+    board["dac_full_scale_dbm"]["DAC_B"] = {"points": [[100, -2.0], [4000, -4.0]], "source": "signal analyzer"}
+    assert client.put("/api/board", json=board, headers=as_client("bob")).status_code == 403
+    client.post("/api/control", headers=as_client("alice"))
+    assert client.put("/api/board", json=board, headers=as_client("alice")).status_code == 200
+
+    assert client.get("/api/board").json()["dac_full_scale_dbm"]["DAC_B"]["source"] == "signal analyzer"
+
+
+def test_the_adc_is_calibrated_from_the_loopback(tmp_path):
+    from qick_interface.power import FULL_SCALE_COUNTS, BoardCalibration
+
+    def loopback_reads_5_dbm_full_scale(program):
+        f = ResonatorSweep.if_axis(program)
+        dbm = BoardCalibration().dac_dbm("DAC_B", f, program.get_pulse_param("probe", "gain"))
+        return [FULL_SCALE_COUNTS * 10 ** ((dbm - 5.0) / 20) + 0j]
+
+    app = create_app(FakeBoard(SOCCFG, loopback_reads_5_dbm_full_scale), data_dir=tmp_path / "d", profiles_dir=tmp_path / "p")
+    with TestClient(app) as client:
+        client.post("/api/control", headers=as_client("alice"))
+
+        board = client.post("/api/board/adc-from-loopback", json={"dac": "DAC_B", "adc": "ADC_D"},
+                            headers=as_client("alice")).json()
+
+        assert board["adc_full_scale_dbm"]["ADC_D"]["points"][0][1] == pytest.approx(5.0, abs=0.01)
+        assert client.get("/api/board").json() == board  # kept
+
+
+def test_gain_fields_get_their_drive_power_in_dbm(client):
+    client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
+
+    hints = client.post("/api/drive-power", json={**SWEEP, "params": {**SWEEP["params"], "gain": 0.5}}).json()
+    rabi = client.post("/api/drive-power", json={"measurement": "rabi", "chip": "Loopback", "params": {
+        "qubit_freq_mhz": 100.0, "readout_freq_mhz": 550.0, "readout_gain": 0.5, "scope_gain": 0.5}}).json()
+
+    assert hints["gain"] == "≈ −7.1 dBm at DAC_B (data sheet)"  # at the sweep center, 150 MHz: −1.09 dBm full scale, −6.02 dB
+    assert rabi["readout_gain"] == "≈ −7.0 dBm at DAC_B (data sheet)"
+    assert rabi["scope_gain"] == "≈ −13.1 dBm peak at DAC_B (data sheet)"  # a Gaussian peaks 6 dB lower

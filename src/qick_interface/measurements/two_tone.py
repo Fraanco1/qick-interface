@@ -10,7 +10,7 @@ from ..frequency import drive_rf_from_if, plan_drive, plan_sweep
 from ..iq import TonesMixin, control_outputs, inputs, outputs, send_readouts
 from ..profiles import SetupProfile
 from ..tone import LOOP_MAX
-from .base import Update, received_s21
+from .base import ABSOLUTE_DB, Update, received_dbm, received_s21
 
 
 def _f(default=..., group=None, unit=None, chip=None, **kw):
@@ -73,7 +73,9 @@ class TwoTone:
     Params = TwoToneParams
     x_axis = {"title": "Qubit frequency", "unit": "MHz"}
     marker_sets = "qubit_freq_mhz"  # chip parameter the marker can be stored as
-    plots = [{"title": "S21 LogMag", "unit": "dB", "traces": ["|S21| (dB)"]},
+    drive_fields = {"qubit_gain": (("qubit_start_mhz", "qubit_stop_mhz"), "qubit", "flat"),
+                    "readout_gain": ("readout_freq_mhz", "readout", "flat")}
+    plots = [{"title": "S21 LogMag", "unit": "dB", "traces": ["|S21| (dB)"], "absolute": ABSOLUTE_DB},
              {"title": "S21 Phase", "unit": "°", "traces": ["Phase (°)"]}]
     info_sets = {}
 
@@ -126,5 +128,7 @@ class TwoTone:
                 mag_db = 20 * np.log10(np.abs(s21))
             # phase relative to the sweep's mean, so the qubit response stands out
             phase = np.degrees(np.angle(s21 * np.exp(-1j * np.angle(np.mean(s21)))))
-            yield Update(i, params.rounds, rf, {"|S21| (dB)": mag_db, "Phase (°)": phase},
+            yield Update(i, params.rounds, rf, {"|S21| (dB)": mag_db, "Phase (°)": phase,
+                                                "Power (dBm)": received_dbm(s21, program, "readout", profile,
+                                                                            board.calibration)},
                          raw={"s21": s21, "qubit_if_mhz": qubit_if})

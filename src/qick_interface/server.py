@@ -11,6 +11,7 @@ from pydantic import BaseModel, ValidationError
 
 from .tone import OutputTone, tone_program
 from .iq_delay import measure as measure_iq_delay
+from .power import BoardCalibration, calibrate_adc_from_loopback, drive_hints, load_board, save_board
 from .time_of_flight import measure as measure_time_of_flight
 from .frequency import FrequencyError
 from .lo import LoError
@@ -166,6 +167,49 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None, scope=None) -
         except (ValueError, FrequencyError, LoError) as e:
             raise HTTPException(422, str(e))
         return {"time_of_flight_us": us}
+
+    board.calibration = load_board(profiles_dir)
+
+    @app.get("/api/board")
+    def board_calibration():
+        return board.calibration.model_dump()
+
+    @app.put("/api/board")
+    def put_board_calibration(calibration: BoardCalibration, x_client_id: str = Header()):
+        if x_client_id != session.controller:
+            raise HTTPException(403, "Only the controller can change the board calibration. Take control first.")
+        save_board(profiles_dir, calibration)
+        board.calibration = calibration
+        return calibration.model_dump()
+
+    class LoopbackRequest(BaseModel):
+        dac: str = "DAC_B"
+        adc: str = "ADC_D"
+
+    @app.post("/api/board/adc-from-loopback")
+    def adc_from_loopback(req: LoopbackRequest, x_client_id: str = Header()):
+        """The ADC's full scale from a cable req.dac → req.adc, trusting the DAC's table; kept in board.json."""
+        try:
+            new = session.measure(x_client_id, lambda b: calibrate_adc_from_loopback(b, b.calibration, req.dac, req.adc),
+                                  None)
+        except NotController as e:
+            raise HTTPException(403, str(e))
+        except Busy as e:
+            raise HTTPException(409, str(e))
+        except (ValueError, KeyError) as e:
+            raise HTTPException(422, str(e))
+        save_board(profiles_dir, new)
+        board.calibration = new
+        return new.model_dump()
+
+    @app.post("/api/drive-power")
+    def drive_power(run: RunRequest):
+        """dBm hints for the gain fields of a measurement's form, as typed (not validated)."""
+        profile = load_profiles(profiles_dir).get(run.chip)
+        m = MEASUREMENTS.get(run.measurement)
+        if profile is None or m is None or not hasattr(m, "drive_fields"):
+            return {}
+        return drive_hints(m, profile, run.params, board.calibration)
 
     @app.post("/api/iq-delay")
     def iq_delay(profile: SetupProfile, x_client_id: str = Header()):

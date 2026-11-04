@@ -12,7 +12,7 @@ from ..frequency import plan_drive, plan_sweep
 from ..iq import TonesMixin, control_outputs, inputs, outputs, send_readouts
 from ..profiles import SetupProfile
 from ..tone import LOOP_MAX
-from .base import Update, received_s21
+from .base import Update, received_mv, received_s21
 
 
 def _f(default=..., group=None, unit=None, chip=None, when=None, **kw):
@@ -92,7 +92,10 @@ class Rabi:
     Params = RabiParams
     x_axis = {"title": "Qubit gain", "unit": ""}
     marker_sets = None
-    plots = [{"title": "Signal", "unit": "a.u.", "traces": ["Signal", "Fit"]},
+    drive_fields = {"qubit_gain": ("qubit_freq_mhz", "qubit", "flat"), "scope_gain": ("qubit_freq_mhz", "qubit", "gauss"),
+                    "readout_gain": ("readout_freq_mhz", "readout", "flat")}
+    plots = [{"title": "Signal", "unit": "a.u.", "traces": ["Signal", "Fit"],
+              "absolute": {"title": "Signal at the ADC", "unit": "mV", "traces": ["Signal (mV)", "Fit (mV)"]}},
              {"title": "Phase", "unit": "°", "traces": ["Phase (°)"]}]
     info_sets = {"π-pulse gain": "pi_gain"}  # fit result -> chip parameter it can be stored as
 
@@ -149,7 +152,9 @@ class Rabi:
             signal = _project(s21)
             fit, x_pi = _fit_damped_cosine(x, signal)
             phase = np.degrees(np.angle(s21 * np.exp(-1j * np.angle(np.mean(s21)))))
-            yield Update(i, params.rounds, x, {"Signal": signal, "Fit": fit, "Phase (°)": phase},
+            mv = lambda v: received_mv(v, program, "readout", profile, board.calibration)
+            yield Update(i, params.rounds, x, {"Signal": signal, "Fit": fit, "Phase (°)": phase,
+                                               "Signal (mV)": mv(signal), "Fit (mV)": mv(fit)},
                          raw={"s21": s21}, x_axis=x_axis,
                          info={info_name: x_pi} if x_pi is not None else {})
 
