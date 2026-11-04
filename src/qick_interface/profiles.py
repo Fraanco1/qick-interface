@@ -20,6 +20,9 @@ class SetupProfile(BaseModel):
     q_dac: str = "DAC_B"
     iq_phase_deg: float = Field(90.0, ge=0, le=180)  # Q phase relative to I, from calibration
     iq_gain_ratio: float = Field(1.0, gt=0, le=2)    # Q gain / I gain, from calibration
+    # How far the Q DAC's output runs ahead of the I DAC's (ps). The DACs sit on different converter tiles,
+    # whose delay is set anew at every power-up; measured with the scope (docs/research/dac-tile-sync.md)
+    iq_delay_ps: float = Field(0.0, ge=-10000, le=10000)
     return_path: Literal["real", "iq"] = "real"
     i_adc: str = "ADC_D"  # used by the I/Q return path
     q_adc: str = "ADC_C"

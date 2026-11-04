@@ -20,17 +20,19 @@ class _Output:
     gen: int
     gain_factor: float
     phase_deg: float
+    lead_ps: float = 0.0  # how far this DAC runs ahead of the I DAC; taken off its phase at each frequency
 
 
 def outputs(soccfg, profile: SetupProfile) -> list[_Output]:
     """The DAC(s) a tone goes out on. On the I/Q path the larger of I and Q gets the full gain;
-    the sign of the Q phase picks the sideband."""
+    the sign of the Q phase picks the sideband, and Q's lead over I (iq_delay_ps) is corrected."""
     if profile.output_path == "real":
         return [_Output("", gen_channel(soccfg, profile.readout_dac), 1.0, 0.0)]
     r = profile.iq_gain_ratio
     sign = 1 if profile.sideband == "upper" else -1
     return [_Output("", gen_channel(soccfg, profile.i_dac), 1 / max(1.0, r), 0.0),
-            _Output("_q", gen_channel(soccfg, profile.q_dac), r / max(1.0, r), sign * profile.iq_phase_deg)]
+            _Output("_q", gen_channel(soccfg, profile.q_dac), r / max(1.0, r), sign * profile.iq_phase_deg,
+                    profile.iq_delay_ps)]
 
 
 def tone_gain(program, name: str):
@@ -91,8 +93,10 @@ class TonesMixin:
         pulse_args.setdefault("style", "const")
         self._tone_lines = {**getattr(self, "_tone_lines", {}), name: line}
         for out in cfg[line]:
+            # a DAC running τ ahead adds 360°·f·τ; freq may be a sweep, and the phase then sweeps with it
+            phase = out.phase_deg - freq * (360e-6 * out.lead_ps) if out.lead_ps else out.phase_deg
             self.add_pulse(ch=out.gen, name=name + out.suffix, ro_ch=cfg["inputs"][0], freq=freq,
-                           phase=out.phase_deg, gain=gain * out.gain_factor, **pulse_args)
+                           phase=phase, gain=gain * out.gain_factor, **pulse_args)
 
     def add_gauss_envelope(self, cfg, name, sigma, length, line="outputs"):
         for out in cfg[line]:

@@ -28,6 +28,7 @@ browser ──REST──▶ server.py ──▶ session.py ──worker thread�
 - **`board.py`** is the only module that touches QICK hardware. `QickBoard` talks to the board over Pyro4; `FakeBoard` takes a function that computes a simulated response from the compiled program. Both expose `soccfg`, `run(program, rounds, should_stop, average=True)` (yields the running average per readout after each round; `average=False` yields each round alone, `rounds=None` runs until stopped), `play(program)` (start without waiting, e.g. the output tone) and `silence()`.
   - `QickBoard` runs its own round loop instead of QICK's `finish_round`: every wait on the board is finite (`poll_data(timeout=1.0)`), and a round with no new data for `STALL_S` (30 s) fails with a clear error. QICK's loop waits forever, and a board-side call left waiting steals data from later runs, so they hang too. Keep this when upgrading QICK.
 - **`tone.py`** builds the continuous calibration tone used by I/Q calibration.
+- **`iq_delay.py`** measures the Q delay for the I/Q cal tab's Measure key, with the oscilloscope: finds the I and Q channels (one DAC at a time), then fits the Q−I phase of an I/Q tone at 20–150 MHz to φ0 + 360°·f·τ. The correction itself is in `iq.py` (`_Output.lead_ps`): Q's phase is set 360°·f·τ earlier, also inside frequency sweeps. **`fake_scope.py`** stands in for the scope in `--fake` mode and tests; it shows what the `FakeBoard` plays, each DAC on a channel with its own lead.
 - **`time_of_flight.py`** measures the time of flight for the Setup panel's Measure key: a 5 µs window opens with a 1 µs test pulse (off the resonator), `board.capture()` returns the averaged samples, and the arrival is where the amplitude reaches half the pulse's level.
 - **`frequency.py`** is pure: RF ↔ IF for a setup profile, and the ADC/DAC limits.
 - **`iq.py`** makes every program play its tones the same way: one pulse on one DAC (real path), or the same pulse on the I and Q DACs with the calibrated phase and gain (I/Q path).
@@ -134,7 +135,7 @@ Tests are written first (red, then green) and only at four agreed places:
 | Where | File | Catches | Misses |
 |---|---|---|---|
 | Frequency planning | `tests/test_frequency.py` | wiring and sideband mistakes, out-of-range IFs | QICK's frequency rounding |
-| Measurements on `FakeBoard` | `tests/test_resonator_sweep.py`, `test_cw_time.py`, `test_two_tone.py`, `test_rabi.py`, `test_iq_return.py`, `test_time_of_flight.py` | the program compiles for this firmware, axes, processing, fits | real timing, Pyro4 |
+| Measurements on `FakeBoard` | `tests/test_resonator_sweep.py`, `test_cw_time.py`, `test_two_tone.py`, `test_rabi.py`, `test_iq_return.py`, `test_iq_output.py`, `test_iq_delay.py`, `test_time_of_flight.py` | the program compiles for this firmware, axes, processing, fits | real timing, Pyro4 |
 | Server | `tests/test_server.py` (with `tests/fake_cxg.py`, a stand-in CXG on localhost) | controller rules, schemas, live updates, saving, tone | how the page looks |
 | Real board | `scripts/hardware_sweep.py`, `scripts/hardware_two_readouts.py`, `scripts/scope_check.py` (manual) | the whole chain on hardware; `scope_check.py` measures the qubit pulses and PMOD marker on the oscilloscope (lengths, carrier, gain, Gaussian width, shot period) | — |
 
@@ -174,6 +175,7 @@ Requests that change anything carry `X-Client-Id` (a random id per browser) and 
 | `POST /api/control` | Become the controller |
 | `POST /api/runs` · `POST /api/runs/stop` | Start a run `{measurement, chip, params}` (409 if busy, 422 if invalid); stop after the current round |
 | `POST /api/tone` · `POST /api/tone/off` | Play the I/Q calibration tone `{chip, rf_mhz, gain, iq_phase_deg?, iq_gain_ratio?}`, or stop whatever plays (tone or sequence) |
+| `POST /api/iq-delay` | Measure the Q delay of a setup profile with the oscilloscope → `{iq_delay_ps, i_channel, q_channel, phase_at_0_deg}`. Controller only; 503 without a scope |
 | `POST /api/time-of-flight` | Measure the time of flight of a setup profile (the body; it need not be saved yet) → `{time_of_flight_us}`. Controller only |
 | `POST /api/sequence` | Play a pulsed measurement's shot at one point until `/api/tone/off` `{measurement, chip, params}` |
 | `WS /ws` | Live messages; on connect, the current state and the last update |

@@ -57,6 +57,10 @@ The app checks every frequency against the setup before running. For example, it
 
 An I/Q mixer also produces an *image* on the other side of the LO. With an uncalibrated MMIQ-0416LS it is only 25–30 dB weaker. Calibrating removes most of it.
 
+**First, after every power-up of the board: the Q delay.** The I and Q DACs start with a delay between them that changes at every power-up (1.55 ns on one, 3.30 ns on the next; restarting the service keeps it). Uncorrected, it turns into a Q phase error that grows with the IF (54° at 100 MHz for 1.5 ns), so a calibration made at one frequency would not hold across a sweep. Cable both DACs to the oscilloscope with two equal cables, press **Measure** next to **Q delay** in the I/Q cal tab (about 25 s), then **Save setup**. The app finds which scope channels they are on, and corrects the Q phase at every frequency from then on. It changes the scope's settings while it measures and puts them back.
+
+Then:
+
 1. Connect the mixer's RF output to a spectrum analyzer (or the PNA-X in spectrum mode).
 2. Press **Setup**, open its **I/Q cal** tab, enter a **Frequency** inside the band you will measure (e.g. the readout frequency), and press **Tone on**.
 3. On the analyzer, find the tone at RF and its image at LO − IF (upper sideband) or LO + IF (lower).
@@ -137,7 +141,7 @@ Measurement: **Two-tone spectroscopy**. **Readout → Readout frequency** is alr
 |---|---|
 | Sweep | Qubit start, Qubit stop (RF, MHz), Points |
 | Qubit | Qubit gain, Qubit pulse length |
-| Readout | Readout frequency, gain, pulse length, window |
+| Readout | Readout frequency, gain, delay before readout (after the qubit pulse, default 0.05 µs), pulse length, window |
 | Average | Averages, Rounds, Repetition delay (default 500 µs: the qubit has to relax between shots, so use about 5×T1) |
 
 The qubit tone may use an IF up to 4915.2 MHz, since only the DAC has to produce it. With the LO at 6.0 GHz (the CXG's maximum), a qubit near 10 GHz needs an IF of about 4.0 GHz, which the DAC and the MMIQ-0416LS accept. With a **Control line** in the setup (e.g. a fluxonium), the qubit tone goes out on that DAC instead, with no mixer, so the qubit frequencies you type are the DAC frequencies.
@@ -150,6 +154,8 @@ Measurement: **Rabi**. Qubit and readout frequencies are filled in from steps 1 
 
 - **Sweep = Amplitude:** a Gaussian pulse of width **Gaussian σ** (total length 4σ) whose gain goes from Start to Stop. The Qubit menu shows Gaussian σ.
 - **Sweep = Length:** a flat pulse of gain **Qubit gain** whose length goes from Start to Stop (µs). The Qubit menu shows Qubit gain.
+
+**Readout → Delay before readout** (default 0.05 µs) sets the wait from the end of the qubit pulse to the start of the readout pulse; 0 starts the readout right away. The board plays no pulse shorter than 3 cycles of its 1.63 ns clock: a flat pulse is at least 4.9 ns (start a length sweep at 0.005 µs), and a Gaussian needs σ of at least 1.22 ns. Lengths are rounded to whole cycles (1.63 ns); the x-axis shows the lengths actually played. Shorter values are refused with a message saying so.
 
 **Tr1** is the readout signal along the direction it moves in the I/Q plane, with a damped-cosine fit as a dashed white line. **Tr2** is the phase.
 

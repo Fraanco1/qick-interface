@@ -4,11 +4,13 @@ from pathlib import Path
 import asyncio
 from urllib.parse import unquote
 
+import Pyro4
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 
 from .tone import OutputTone, tone_program
+from .iq_delay import measure as measure_iq_delay
 from .time_of_flight import measure as measure_time_of_flight
 from .frequency import FrequencyError
 from .lo import LoError
@@ -32,7 +34,7 @@ class RunRequest(BaseModel):
     params: dict
 
 
-def create_app(board, data_dir: Path, profiles_dir: Path, lo=None) -> FastAPI:
+def create_app(board, data_dir: Path, profiles_dir: Path, lo=None, scope=None) -> FastAPI:
     app = FastAPI(title="QICK interface")
     session = Session(board, MEASUREMENTS, data_dir, lo)
     app.state.session = session
@@ -164,6 +166,22 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None) -> FastAPI:
         except (ValueError, FrequencyError, LoError) as e:
             raise HTTPException(422, str(e))
         return {"time_of_flight_us": us}
+
+    @app.post("/api/iq-delay")
+    def iq_delay(profile: SetupProfile, x_client_id: str = Header()):
+        """Measure how far the Q DAC runs ahead of the I DAC, on the scope; the page fills the field."""
+        if scope is None:
+            raise HTTPException(503, "No oscilloscope is connected to the app.")
+        try:
+            return session.measure(x_client_id, lambda b: measure_iq_delay(b, scope, profile), profile)
+        except NotController as e:
+            raise HTTPException(403, str(e))
+        except Busy as e:
+            raise HTTPException(409, str(e))
+        except (ValueError, FrequencyError, LoError) as e:
+            raise HTTPException(422, str(e))
+        except (RuntimeError, Pyro4.errors.PyroError) as e:  # the scope itself failed
+            raise HTTPException(502, str(e))
 
     @app.post("/api/tone/off")
     def tone_off(x_client_id: str = Header()):

@@ -31,6 +31,8 @@ class RabiParams(BaseModel):
                          when={"sweep": "amplitude"}, title="Gaussian σ")
     readout_freq_mhz: float = _f(group="Readout", unit="MHz", chip="readout_freq_mhz", title="Readout frequency")
     readout_gain: float = _f(0.5, group="Readout", chip="readout_gain", ge=0, le=1, title="Readout gain")
+    readout_gap_us: float = _f(0.05, group="Readout", unit="µs", ge=0, le=100, title="Delay before readout",
+                               description="From the end of the qubit pulse to the start of the readout pulse.")
     readout_pulse_us: float = _f(2.0, group="Readout", unit="µs", gt=0, le=100, title="Readout pulse length")
     readout_length_us: float = _f(1.5, group="Readout", unit="µs", gt=0, le=100, title="Readout window")
     averages: int = _f(500, group="Average", ge=1, title="Averages per round")
@@ -65,9 +67,24 @@ class _Program(TonesMixin, AveragerProgramV2):
         self.play_tone(cfg, "qubit", t=0)
         if cfg["scope"]:  # PMOD0_0 is high while the qubit pulse plays
             self.trigger(pins=[0], t=0, width=4 * cfg["sigma"] if cfg["sweep"] == "amplitude" else cfg["swept"])
-        self.delay_auto(t=0.05)  # readout right after the qubit pulse
+        self.delay_auto(t=cfg["readout_gap"])  # from the end of the qubit pulse
         self.play_tone(cfg, "readout", t=0)
         self.read(cfg, pins=None if cfg["scope"] else [0], t=cfg["trigger_delay"])
+
+
+
+def _check_shortest(soccfg, profile, params, length_us, field):
+    """QICK plays no pulse shorter than 3 cycles of the generator's clock (asm_v2: "shorter than the
+    min of 3"); say so in the app's terms before QICK does. length_us: the shortest flat pulse asked
+    for (a length sweep's Start, or the Output length), named by `field`; a Gaussian lasts 4σ."""
+    gen = control_outputs(soccfg, profile)[0].gen
+    shortest_us = soccfg.cycles2us(3, gen_ch=gen)
+    cycle_ns = 1e3 / soccfg["gens"][gen]["f_fabric"]
+    limit = f"The shortest qubit pulse is {shortest_us * 1e3:.1f} ns (3 cycles of {cycle_ns:.2f} ns)"
+    if params.sweep == "length" and length_us < shortest_us:
+        raise ValueError(f"{limit}; set {field} to at least {shortest_us:.4f} µs.")
+    if params.sweep == "amplitude" and 4 * params.sigma_us < shortest_us:
+        raise ValueError(f"{limit}, and the Gaussian lasts 4σ; set σ to at least {shortest_us / 4 * 1e3:.2f} ns.")
 
 
 class Rabi:
@@ -101,6 +118,7 @@ class Rabi:
             "sigma": params.sigma_us,
             "readout_freq": readout.if_start,
             "readout_gain": params.readout_gain,
+            "readout_gap": params.readout_gap_us,
             "readout_pulse": params.readout_pulse_us,
             "readout_length": params.readout_length_us,
             "trigger_delay": profile.time_of_flight_us,
@@ -111,11 +129,13 @@ class Rabi:
     def sequence(cls, soccfg, profile: SetupProfile, params: RabiParams):
         """One shot at the Output menu's gain (or length), repeated until silenced, for an oscilloscope."""
         at = params.scope_gain if params.sweep == "amplitude" else params.scope_length_us
+        _check_shortest(soccfg, profile, params, params.scope_length_us, "the Output length")
         return cls._program(soccfg, profile, params, at, points=LOOP_MAX, reps=LOOP_MAX, scope=True)
 
     @classmethod
     def run(cls, board, profile: SetupProfile, params: RabiParams,
             should_stop: Callable[[], bool] = lambda: False) -> Iterator[Update]:
+        _check_shortest(board.soccfg, profile, params, min(params.start, params.stop), "Start")
         program = cls._program(board.soccfg, profile, params, QickSweep1D("sweep", params.start, params.stop),
                                points=params.points, reps=params.averages)
         x = cls.x_values(program)

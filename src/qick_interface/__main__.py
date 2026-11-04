@@ -7,6 +7,7 @@ import numpy as np
 import uvicorn
 
 from .board import FakeBoard, QickBoard
+from .fake_scope import FakeScope
 from .lo import CxgLo
 from .server import create_app
 
@@ -63,11 +64,13 @@ def main():
     if args.fake:
         from qick import QickConfig
         board = FakeBoard(QickConfig(str(FIXTURE)), simulated_chip, round_time_s=0.3)
+        scope = FakeScope(board, {"DAC_A": ("CH1", 0.0), "DAC_B": ("CH3", 1550.0)})  # Q 1.55 ns ahead
     else:
         board = QickBoard(host=args.board)
+        scope = board.scope()
     host, _, port = (args.lo or "").partition(":")
     lo = CxgLo(host, int(port or 5025)) if host else None
-    uvicorn.run(create_app(board, args.data, args.profiles, lo), host=args.host, port=args.port)
+    uvicorn.run(create_app(board, args.data, args.profiles, lo, scope), host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

@@ -100,3 +100,15 @@ def test_the_scope_sequence_needs_a_qubit_frequency():
 
     with pytest.raises(ValueError, match="Qubit frequency"):
         TwoTone.sequence(SOCCFG, TRANSMON, params)
+
+
+@pytest.mark.parametrize("gap", [None, 0.0, 0.2])
+def test_the_readout_starts_after_the_delay_set_after_the_qubit_pulse(gap):
+    from test_rabi import gap_before_readout_us
+    params = TwoToneParams.model_validate({"readout_freq_mhz": 7000.0, "scope_qubit_freq_mhz": 10050.0,
+                                           **({} if gap is None else {"readout_gap_us": gap})},
+                                          context={"sequence": True})
+
+    program = TwoTone.sequence(SOCCFG, TRANSMON, params)
+
+    assert gap_before_readout_us(program) == (0.05 if gap is None else gap)

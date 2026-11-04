@@ -112,3 +112,40 @@ def test_the_scope_sequence_repeats_one_rabi_shot_at_the_value_typed(sweep, at, 
     assert program.get_pulse_param("readout", "gain") == pytest.approx(params.readout_gain, abs=0.001)
     assert plays_for_hours(program)
     assert marker_at_shot_start(program)
+
+
+SHORTEST = "The shortest qubit pulse is 4.9 ns"  # 3 cycles of the generators' 614.4 MHz clock
+
+
+@pytest.mark.parametrize("params", [
+    dict(sweep="length", start=0.0, stop=0.6),     # the Start a length sweep begins with
+    dict(sweep="length", start=0.004, stop=0.6),
+    dict(sweep="amplitude", sigma_us=0.001),         # 4σ = 4 ns
+])
+def test_a_qubit_pulse_shorter_than_the_board_allows_is_refused_in_plain_words(params):
+    with pytest.raises(ValueError, match=SHORTEST):
+        list(Rabi.run(FakeBoard(SOCCFG, oscillating(0.4)), TRANSMON, RabiParams(**{**BASE, **params})))
+
+
+def test_the_scope_sequence_refuses_a_too_short_pulse_too():
+    with pytest.raises(ValueError, match=SHORTEST):
+        Rabi.sequence(SOCCFG, TRANSMON, RabiParams(**BASE, sweep="length", scope_length_us=0.002))
+
+
+def test_the_shortest_pulses_the_board_allows_are_accepted():
+    Rabi.sequence(SOCCFG, TRANSMON, RabiParams(**BASE, sweep="length", scope_length_us=0.005))
+    Rabi.sequence(SOCCFG, TRANSMON, RabiParams(**BASE, sweep="amplitude", sigma_us=0.0013))
+
+
+def gap_before_readout_us(program):
+    """The wait between the end of the qubit pulse and the start of the readout pulse."""
+    macros = program.macro_list
+    readout = next(i for i, m in enumerate(macros) if type(m).__name__ == "Pulse" and m.name == "readout")
+    return next(m.t for m in reversed(macros[:readout]) if type(m).__name__ == "Delay" and m.auto)
+
+
+@pytest.mark.parametrize("gap", [None, 0.0, 0.2])
+def test_the_readout_starts_after_the_delay_set_after_the_qubit_pulse(gap):
+    params = RabiParams(**BASE, **({} if gap is None else {"readout_gap_us": gap}))
+
+    assert gap_before_readout_us(Rabi.sequence(SOCCFG, TRANSMON, params)) == (0.05 if gap is None else gap)

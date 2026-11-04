@@ -471,3 +471,29 @@ def test_the_controller_measures_the_time_of_flight_of_the_setup_being_edited(tm
         measured = client.post("/api/time-of-flight", json=unsaved, headers=as_client("alice")).json()
 
         assert measured["time_of_flight_us"] == pytest.approx(0.42, abs=0.005)
+
+
+def test_the_controller_measures_the_q_delay_on_the_scope(tmp_path):
+    from qick_interface.fake_scope import FakeScope
+    board = FakeBoard(SOCCFG, flat_response)
+    scope = FakeScope(board, {"DAC_A": ("CH1", 0.0), "DAC_B": ("CH3", 1550.0)})
+    app = create_app(board, data_dir=tmp_path / "data", profiles_dir=tmp_path / "profiles", scope=scope)
+    iq = {**LOOPBACK, "output_path": "iq", "i_dac": "DAC_A", "q_dac": "DAC_B"}
+    with TestClient(app) as client:
+        client.post("/api/control", headers=as_client("alice"))
+
+        assert client.post("/api/iq-delay", json=iq, headers=as_client("bob")).status_code == 403
+        measured = client.post("/api/iq-delay", json=iq, headers=as_client("alice")).json()
+
+        assert measured["iq_delay_ps"] == pytest.approx(1550, abs=20)
+        assert client.post("/api/iq-delay", json=LOOPBACK, headers=as_client("alice")).status_code == 422
+
+
+def test_without_a_scope_the_q_delay_cannot_be_measured(client):
+    client.post("/api/control", headers=as_client("alice"))
+    iq = {**LOOPBACK, "output_path": "iq"}
+
+    r = client.post("/api/iq-delay", json=iq, headers=as_client("alice"))
+
+    assert r.status_code == 503
+    assert "oscilloscope" in r.json()["detail"]

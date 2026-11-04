@@ -351,6 +351,8 @@ const PROFILE_FIELDS = [
   ["q_dac", "Q output", ["DAC_A", "DAC_B"], null, null, "iq"],
   ["iq_phase_deg", "Q phase offset", "number", "°", "90 for an ideal mixer.", "I/Q cal"],
   ["iq_gain_ratio", "Q / I gain", "number", null, "1 for an ideal mixer.", "I/Q cal"],
+  ["iq_delay_ps", "Q delay", "number", "ps",
+    "How far the Q DAC runs ahead of the I DAC. It changes at every power-up of the board: Measure it with both DACs cabled to the oscilloscope (equal cables).", "I/Q cal"],
   ["electrical_delay_ns", "Electrical delay", "number", "ns",
     "Subtracted from the resonator sweep's phase. Empty: fitted on each sweep. Store it from a wide sweep (Marker menu)."],
   ["time_of_flight_us", "Time of flight", "number", "µs",
@@ -365,10 +367,10 @@ const PROFILE_FIELDS = [
   ["rx_phase_deg", "RX Q phase", "number", "°", "0 for an ideal mixer.", "return:iq"],
   ["rx_delay_ps", "RX I/Q delay", "number", "ps", "About 48 ps per cm of I/Q cable difference.", "return:iq"],
 ];
-const NUMBER_FIELDS = ["lo_power_dbm", "time_of_flight_us", "iq_phase_deg", "iq_gain_ratio", "rx_gain_ratio", "rx_phase_deg", "rx_delay_ps"];
+const NUMBER_FIELDS = ["lo_power_dbm", "time_of_flight_us", "iq_phase_deg", "iq_gain_ratio", "iq_delay_ps", "rx_gain_ratio", "rx_phase_deg", "rx_delay_ps"];
 
 const NEW_PROFILE = { chip: "", lo_mhz: null, lo_power_dbm: 13, sideband: "upper", output_path: "real",
-  readout_dac: "DAC_B", i_dac: "DAC_A", q_dac: "DAC_B", iq_phase_deg: 90, iq_gain_ratio: 1, readout_adc: "ADC_D",
+  readout_dac: "DAC_B", i_dac: "DAC_A", q_dac: "DAC_B", iq_phase_deg: 90, iq_gain_ratio: 1, iq_delay_ps: 0, readout_adc: "ADC_D",
   electrical_delay_ns: null, time_of_flight_us: 0.3, control_dac: null, return_path: "real", i_adc: "ADC_D", q_adc: "ADC_C", rx_gain_ratio: 1, rx_phase_deg: 0, rx_delay_ps: 0 };
 
 // ---- the chip's setup: a panel over the screen, apart from the measurement's menus ----
@@ -456,18 +458,24 @@ function setupMenu(menu) {
     for (const k of NUMBER_FIELDS) profile[k] = Number(profile[k]);
     return profile;
   };
-  // Measure: the time of flight of the setup as edited; the result waits in the field for Save setup
-  const measure = button("Measure", async () => {
-    measure.disabled = true;
-    try {
-      const { time_of_flight_us } = await api("POST", "/api/time-of-flight", formProfile());
-      controls.time_of_flight_us.value = time_of_flight_us;
-      message(`Time of flight measured: ${time_of_flight_us} µs. Press Save setup to keep it.`);
-    } catch (e) { message(e.message, true); }
-    finally { measure.disabled = false; applyControl(); }
-  });
-  measure.dataset.control = "1";
-  rows.time_of_flight_us.querySelector(".input-row").append(measure);
+  // Measure keys: a value of the setup as edited, measured on the board; it waits in the field for Save setup
+  const measureKey = (key, path, describe) => {
+    const measure = button("Measure", async () => {
+      measure.disabled = true;
+      message("Measuring…");
+      try {
+        const result = await api("POST", path, formProfile());
+        controls[key].value = result[key];
+        message(`${describe(result)} Press Save setup to keep it.`);
+      } catch (e) { message(e.message, true); }
+      finally { measure.disabled = false; applyControl(); }
+    });
+    measure.dataset.control = "1";
+    rows[key].querySelector(".input-row").append(measure);
+  };
+  measureKey("time_of_flight_us", "/api/time-of-flight", (r) => `Time of flight measured: ${r.time_of_flight_us} µs.`);
+  measureKey("iq_delay_ps", "/api/iq-delay", (r) =>
+    `Q delay measured: ${r.iq_delay_ps} ps (I on ${r.i_channel}, Q on ${r.q_channel}).`);
 
   const save = button("Save setup", async () => {
     const profile = formProfile();

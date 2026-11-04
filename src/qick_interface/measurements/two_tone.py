@@ -27,6 +27,8 @@ class TwoToneParams(BaseModel):
     qubit_length_us: float = _f(10.0, group="Qubit", unit="µs", gt=0, le=100, title="Qubit pulse length")
     readout_freq_mhz: float = _f(group="Readout", unit="MHz", chip="readout_freq_mhz", title="Readout frequency")
     readout_gain: float = _f(0.5, group="Readout", chip="readout_gain", ge=0, le=1, title="Readout gain")
+    readout_gap_us: float = _f(0.05, group="Readout", unit="µs", ge=0, le=100, title="Delay before readout",
+                               description="From the end of the qubit pulse to the start of the readout pulse.")
     readout_pulse_us: float = _f(2.0, group="Readout", unit="µs", gt=0, le=100, title="Readout pulse length")
     readout_length_us: float = _f(1.5, group="Readout", unit="µs", gt=0, le=100, title="Readout window")
     averages: int = _f(100, group="Average", ge=1, title="Averages per round")
@@ -61,7 +63,7 @@ class _Program(TonesMixin, AveragerProgramV2):
         self.play_tone(cfg, "qubit", t=0)
         if cfg["scope"]:  # PMOD0_0 is high while the qubit pulse plays
             self.trigger(pins=[0], t=0, width=cfg["qubit_length"])
-        self.delay_auto(t=0.05)  # readout right after the qubit pulse
+        self.delay_auto(t=cfg["readout_gap"])  # from the end of the qubit pulse
         self.play_tone(cfg, "readout", t=0)
         self.read(cfg, pins=None if cfg["scope"] else [0], t=cfg["trigger_delay"])
 
@@ -95,6 +97,7 @@ class TwoTone:
             "qubit_gain": params.qubit_gain,
             "qubit_length": params.qubit_length_us,
             "readout_gain": params.readout_gain,
+            "readout_gap": params.readout_gap_us,
             "readout_pulse": params.readout_pulse_us,
             "readout_length": params.readout_length_us,
             "trigger_delay": profile.time_of_flight_us,

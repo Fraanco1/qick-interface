@@ -53,7 +53,8 @@ class QickBoard:
     def __init__(self, host: str = "192.168.3.1", port: int = 8888, name: str = "rfsoc"):
         Pyro4.config.SERIALIZER = "pickle"
         Pyro4.config.PICKLE_PROTOCOL_VERSION = 4
-        self._soc = Pyro4.Proxy(Pyro4.locateNS(host=host, port=port).lookup(name))
+        self._ns = Pyro4.locateNS(host=host, port=port)
+        self._soc = Pyro4.Proxy(self._ns.lookup(name))
         self._soc._pyroTimeout = self.CALL_TIMEOUT_S
         self.soccfg = QickConfig(self._soc.get_cfg())
         if self.soccfg["sw_version"] != qick.__version__:
@@ -80,6 +81,14 @@ class QickBoard:
             raise
         finally:
             self._quietly(self._soc.reset_gens)  # silence any output left playing
+
+    def scope(self):
+        """The oscilloscope the board service shares as "scope" (board/scope.py), or None without one.
+        It has query(), write() and waveform(channel); a scope on the PC would offer the same."""
+        try:
+            return Pyro4.Proxy(self._ns.lookup("scope"))
+        except Pyro4.errors.NamingError:
+            return None
 
     def capture(self, program) -> list[np.ndarray]:
         """The window's samples, averaged over the shots: one complex array per readout."""
