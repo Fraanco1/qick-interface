@@ -20,6 +20,13 @@ class SetupProfile(BaseModel):
     q_dac: str = "DAC_B"
     iq_phase_deg: float = Field(90.0, ge=0, le=180)  # Q phase relative to I, from calibration
     iq_gain_ratio: float = Field(1.0, gt=0, le=2)    # Q gain / I gain, from calibration
+    return_path: Literal["real", "iq"] = "real"
+    i_adc: str = "ADC_D"  # used by the I/Q return path
+    q_adc: str = "ADC_C"
+    # RX I/Q calibration: Y_Q = ∓j·g·e^{j(φ + 2π·f_IF·τ)}·Y_I through the real mixer and cables (see docs/s21.md)
+    rx_gain_ratio: float = Field(1.0, gt=0, le=2)
+    rx_phase_deg: float = Field(0.0, ge=-180, le=180)
+    rx_delay_ps: float = 0.0
 
 
 def load_profiles(directory: Path) -> dict[str, SetupProfile]:

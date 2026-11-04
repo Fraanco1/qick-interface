@@ -6,9 +6,8 @@ import numpy as np
 from pydantic import BaseModel, Field
 from qick.asm_v2 import AsmV2, AveragerProgramV2, QickSweep1D
 
-from ..board import readout_channel
 from ..frequency import plan_sweep, rf_from_if
-from ..iq import TonesMixin, outputs
+from ..iq import TonesMixin, inputs, outputs, send_readouts
 from ..profiles import SetupProfile
 from .base import Update, received_s21
 
@@ -36,12 +35,11 @@ class _Program(TonesMixin, AveragerProgramV2):
     waits the settling time, then measures."""
 
     def _initialize(self, cfg):
-        ro = cfg["ro"]
         self.declare_outputs(cfg)
-        self.declare_readout(ch=ro, length=cfg["readout_length"])
-        self.add_readoutconfig(ch=ro, name="ro", freq=cfg["freq"], gen_ch=cfg["outputs"][0].gen)
+        self.declare_inputs(cfg, length=cfg["readout_length"])
+        self.add_readout(cfg, "ro", freq=cfg["freq"])
         push_ro = AsmV2()
-        push_ro.send_readoutconfig(ch=ro, name="ro", t=0)
+        send_readouts(push_ro, cfg, "ro")
         self.add_loop("freq", cfg["points"], exec_before=push_ro)
         if cfg["cw"]:
             self.add_tone(cfg, "probe", freq=cfg["freq"], length=1.0, gain=cfg["gain"], mode="periodic")
@@ -51,7 +49,7 @@ class _Program(TonesMixin, AveragerProgramV2):
     def _body(self, cfg):
         self.play_tone(cfg, "probe", t=0)
         window_start = cfg["settle"] + cfg["trigger_delay"] if cfg["cw"] else cfg["trigger_delay"]
-        self.trigger(ros=[cfg["ro"]], pins=[0], t=window_start)
+        self.read(cfg, pins=[0], t=window_start)
         if cfg["cw"]:
             self.delay_auto(t=0, gens=False)  # next frequency only after this window closes
 
@@ -71,12 +69,12 @@ class ResonatorSweep:
         return program.get_pulse_param("probe", "freq", as_array=True)
 
     @classmethod
-    def run(cls, board, profile: SetupProfile, params: ResonatorSweepParams,
-            should_stop: Callable[[], bool] = lambda: False) -> Iterator[Update]:
+    def program(cls, board, profile: SetupProfile, params: ResonatorSweepParams):
+        """The compiled sweep program, with the IF and RF of each point as QICK rounded them."""
         plan = plan_sweep(profile, params.rf_start_mhz, params.rf_stop_mhz)
         cfg = {
             "outputs": outputs(board.soccfg, profile),
-            "ro": readout_channel(board.soccfg, profile.readout_adc),
+            "inputs": inputs(board.soccfg, profile),
             "freq": QickSweep1D("freq", plan.if_start, plan.if_stop),
             "points": params.points,
             "gain": params.gain,
@@ -90,10 +88,14 @@ class ResonatorSweep:
         final_delay = 0.05 if params.mode == "cw" else params.final_delay_us
         program = _Program(board.soccfg, reps=params.averages, final_delay=final_delay, cfg=cfg)
         if_mhz = cls.if_axis(program)
-        rf = rf_from_if(profile, if_mhz)
+        return program, if_mhz, rf_from_if(profile, if_mhz)
 
+    @classmethod
+    def run(cls, board, profile: SetupProfile, params: ResonatorSweepParams,
+            should_stop: Callable[[], bool] = lambda: False) -> Iterator[Update]:
+        program, if_mhz, rf = cls.program(board, profile, params)
         for i, iq in enumerate(board.run(program, params.rounds, should_stop), start=1):
-            s21 = received_s21(iq[0], program, "probe", profile)
+            s21 = received_s21(iq, program, "probe", profile)
             with np.errstate(divide="ignore"):  # no signal gives -inf dB, shown as a gap
                 mag_db = 20 * np.log10(np.abs(s21))
             yield Update(i, params.rounds, rf, {

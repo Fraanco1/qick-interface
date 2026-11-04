@@ -8,9 +8,8 @@ from pydantic import BaseModel, Field
 from qick.asm_v2 import AveragerProgramV2, QickSweep1D
 from scipy.optimize import OptimizeWarning, curve_fit
 
-from ..board import readout_channel
 from ..frequency import plan_sweep
-from ..iq import TonesMixin, outputs
+from ..iq import TonesMixin, inputs, outputs, send_readouts
 from ..profiles import SetupProfile
 from .base import Update, received_s21
 
@@ -41,10 +40,9 @@ class RabiParams(BaseModel):
 
 class _Program(TonesMixin, AveragerProgramV2):
     def _initialize(self, cfg):
-        ro = cfg["ro"]
         self.declare_outputs(cfg)
-        self.declare_readout(ch=ro, length=cfg["readout_length"])
-        self.add_readoutconfig(ch=ro, name="ro", freq=cfg["readout_freq"], gen_ch=cfg["outputs"][0].gen)
+        self.declare_inputs(cfg, length=cfg["readout_length"])
+        self.add_readout(cfg, "ro", freq=cfg["readout_freq"])
         self.add_loop("sweep", cfg["points"])
         if cfg["sweep"] == "amplitude":
             self.add_gauss_envelope(cfg, "gauss", sigma=cfg["sigma"], length=4 * cfg["sigma"])
@@ -55,11 +53,11 @@ class _Program(TonesMixin, AveragerProgramV2):
                       length=cfg["readout_pulse"])
 
     def _body(self, cfg):
-        self.send_readoutconfig(ch=cfg["ro"], name="ro", t=0)
+        send_readouts(self, cfg, "ro")
         self.play_tone(cfg, "qubit", t=0)
         self.delay_auto(t=0.05)  # readout right after the qubit pulse
         self.play_tone(cfg, "readout", t=0)
-        self.trigger(ros=[cfg["ro"]], pins=[0], t=cfg["trigger_delay"])
+        self.read(cfg, pins=[0], t=cfg["trigger_delay"])
 
 
 class Rabi:
@@ -84,7 +82,7 @@ class Rabi:
         readout = plan_sweep(profile, params.readout_freq_mhz, params.readout_freq_mhz)
         program = _Program(board.soccfg, reps=params.averages, final_delay=params.final_delay_us, cfg={
             "outputs": outputs(board.soccfg, profile),
-            "ro": readout_channel(board.soccfg, profile.readout_adc),
+            "inputs": inputs(board.soccfg, profile),
             "sweep": params.sweep,
             "swept": QickSweep1D("sweep", params.start, params.stop),
             "points": params.points,
@@ -104,7 +102,7 @@ class Rabi:
             x_axis, info_name = {"title": "Qubit pulse length", "unit": "µs"}, "π-pulse length (µs)"
 
         for i, iq in enumerate(board.run(program, params.rounds, should_stop), start=1):
-            s21 = received_s21(iq[0], program, "readout", profile)
+            s21 = received_s21(iq, program, "readout", profile)
             signal = _project(s21)
             fit, x_pi = _fit_damped_cosine(x, signal)
             phase = np.degrees(np.angle(s21 * np.exp(-1j * np.angle(np.mean(s21)))))

@@ -10,6 +10,7 @@ It measures transmon and fluxonium chips:
 - **CW Time:** |S21| and phase against time at one frequency, redrawn sweep after sweep until Stop, like the PNA-X sweep type of the same name.
 - **Two-tone spectroscopy:** sweep a qubit tone while reading out at the resonator.
 - **Rabi:** sweep the qubit pulse amplitude or length, with a fitted π-pulse.
+- **I/Q return path:** an I/Q mixer into two ADCs, combined in software to reject the image band, with an automatic **RX I/Q calibration** (gain, phase, delay).
 - **Output tone:** a continuous tone or pulse train (with an oscilloscope trigger) for checking the setup, and for I/Q calibration.
 
 Each chip keeps its own wiring (*setup profile*) and its own measured values (*chip parameters*), so each measurement starts from what the previous one found.

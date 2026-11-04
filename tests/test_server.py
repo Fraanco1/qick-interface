@@ -258,3 +258,18 @@ def test_cw_time_runs_until_stopped_and_saves_every_sweep(tmp_path):
     assert sweeps >= 3
     assert meta["completed"] is True  # Stop is how a continuous run ends
     assert np.load(f"{name}.npz")["s21"].shape == (sweeps, 51)
+
+
+def test_rx_calibration_says_which_setup_fields_its_results_can_be_stored_in(client):
+    cal = client.get("/api/measurements").json()["rx_iq_cal"]
+
+    assert cal["setup_sets"] == {"Q/I gain": "rx_gain_ratio", "Q phase (°)": "rx_phase_deg",
+                                 "I/Q delay (ps)": "rx_delay_ps"}
+
+
+def test_a_setup_with_an_iq_return_path_is_saved(client):
+    client.post("/api/control", headers=as_client("alice"))
+    iq_return = {**LOOPBACK, "return_path": "iq", "i_adc": "ADC_D", "q_adc": "ADC_C", "rx_delay_ps": 48.0}
+
+    assert client.put("/api/profiles/Loopback", json=iq_return, headers=as_client("alice")).status_code == 200
+    assert client.get("/api/profiles").json()["Loopback"]["rx_delay_ps"] == 48.0

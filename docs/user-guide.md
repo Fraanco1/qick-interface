@@ -35,7 +35,10 @@ Each chip has a *setup profile*: how it is wired. Open **Setup**:
 | Output path | Real: the tone leaves on one DAC. I/Q: the same tone on two DACs, 90° apart, into an I/Q mixer. |
 | Readout output | The DAC used on the real path. |
 | I output, Q output | The DACs used on the I/Q path (normally I = DAC_A, Q = DAC_B). |
-| Readout input | The ADC that receives the signal from the chip. |
+| Return path | Real: the signal comes back through a real mixer into one ADC. I/Q: through an I/Q mixer into two ADCs, combined in software, which rejects the image band (see [RX I/Q calibration](#rx-iq-calibration-iq-return-only)). |
+| Readout input | The ADC that receives the signal (real return path). |
+| I input, Q input | The ADCs for the mixer's I and Q outputs (normally ADC_D and ADC_C). Use cables of equal length. |
+| RX Q / I gain, RX Q phase, RX I/Q delay | The RX I/Q calibration, filled in by that measurement. |
 
 Press **Save setup**. To add a chip, change the name and save; the old chip stays.
 
@@ -58,6 +61,17 @@ An I/Q mixer also produces an *image* on the other side of the LO. With an uncal
 The status bar shows **Tone** while it plays. Starting a run turns the tone off.
 
 The values are valid for one LO frequency and power; recalibrate when you change them.
+
+## RX I/Q calibration (I/Q return only)
+
+On the I/Q return path the app combines the I and Q readouts as Y_I + j·Y_Q. That rejects the image band only if the two paths are balanced; the mixer, the cables (about 48 ps, or 3.5° at 200 MHz IF, per cm of difference) and the ADC paths add a gain ratio, a phase offset and a delay. This measurement finds them, without a spectrum analyzer.
+
+1. If the output is I/Q too, do the [I/Q calibration](#iq-calibration-iq-chips-only) of the output first: an image on the test tone would bias this one.
+2. Measurement: **RX I/Q calibration**. Set **Start** and **Stop** to the band you will measure in, for example the readout frequency ± 50 MHz. The chip can stay connected: everything before the mixer cancels out.
+3. **Run sweep**. Tr1 shows the Q/I gain and Tr2 the Q phase error against frequency, each with its fit (dashed). The screen shows the fitted **Q/I gain**, **Q phase**, **I/Q delay** and the expected **Image rejection** after correction; the scatter (noise) limits that estimate, so average more if it is low.
+4. **Marker → Store RX calibration in setup**. Every measurement on this chip now uses it.
+
+Recalibrate after changing the I/Q cables, or the LO frequency or power by much, or before measuring far from the calibrated band.
 
 ## Measuring a transmon: the usual order
 

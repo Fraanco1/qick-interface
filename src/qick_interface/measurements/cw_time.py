@@ -6,9 +6,8 @@ import numpy as np
 from pydantic import BaseModel, Field
 from qick.asm_v2 import AveragerProgramV2
 
-from ..board import readout_channel
 from ..frequency import plan_sweep
-from ..iq import TonesMixin, outputs
+from ..iq import TonesMixin, inputs, outputs, send_readouts
 from ..profiles import SetupProfile
 from .base import Update, received_s21
 
@@ -35,18 +34,17 @@ class _Program(TonesMixin, AveragerProgramV2):
     Each round of the program is one sweep."""
 
     def _initialize(self, cfg):
-        ro = cfg["ro"]
         self.declare_outputs(cfg)
-        self.declare_readout(ch=ro, length=cfg["readout_length"])
-        self.add_readoutconfig(ch=ro, name="ro", freq=cfg["freq"], gen_ch=cfg["outputs"][0].gen)
+        self.declare_inputs(cfg, length=cfg["readout_length"])
+        self.add_readout(cfg, "ro", freq=cfg["freq"])
         self.add_tone(cfg, "probe", freq=cfg["freq"], length=1.0, gain=cfg["gain"], mode="periodic")
         self.add_loop("point", cfg["points"])
-        self.send_readoutconfig(ch=ro, name="ro", t=0)
+        send_readouts(self, cfg, "ro")
         self.play_tone(cfg, "probe", t=0)
         self.delay_auto(t=cfg["settle"], gens=False)  # settling counts from the tone's start
 
     def _body(self, cfg):
-        self.trigger(ros=[cfg["ro"]], t=0)
+        self.read(cfg, t=0)
         self.delay(t=cfg["spacing"])  # the next window opens as this one closes
 
 
@@ -66,13 +64,12 @@ class CwTime:
         cfg = {
             "cw_time": True,
             "outputs": outputs(board.soccfg, profile),
-            "ro": readout_channel(board.soccfg, profile.readout_adc),
+            "inputs": inputs(board.soccfg, profile),
             "freq": plan.if_start,
             "points": params.points,
             "gain": params.gain,
             "readout_length": params.readout_length_us,
-            "spacing": _spacing(board.soccfg, readout_channel(board.soccfg, profile.readout_adc),
-                                params.readout_length_us),
+            "spacing": _spacing(board.soccfg, inputs(board.soccfg, profile)[0], params.readout_length_us),
             "settle": params.settle_us,
         }
         program = _Program(board.soccfg, reps=params.averages, reps_innermost=True,
@@ -82,7 +79,7 @@ class CwTime:
         # every sweep is kept for saving; np.savez stacks the list into (sweeps, points)
         sweeps, ends = [], []
         for i, iq in enumerate(board.run(program, None, should_stop, average=False), start=1):
-            s21 = received_s21(iq[0], program, "probe", profile)
+            s21 = received_s21(iq, program, "probe", profile)
             sweeps.append(s21)
             ends.append(time.time())
             with np.errstate(divide="ignore"):  # no signal gives -inf dB, shown as a gap

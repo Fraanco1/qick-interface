@@ -35,8 +35,13 @@ def simulated_chip(program):
         f = ResonatorSweep.if_axis(program)
         f0, width = (f[0] + f[-1]) / 2, max(abs(f[-1] - f[0]) / 40, 0.01)
         s21 = 800 * (1 - 0.85 / (1 + 2j * (f - f0) / width)) * np.exp(-2j * np.pi * f * 0.05)
-    gain = program.get_pulse_param("probe" if "probe" in program.pulses else "readout", "gain")
-    return [gain * s21 + np.random.normal(0, 4, (f.size, 2)) @ [1, 1j]]  # signal scales with gain, noise doesn't
+    tone = "probe" if "probe" in program.pulses else "readout"
+    s21 = program.get_pulse_param(tone, "gain") * s21  # the signal scales with gain, the noise doesn't
+    noise = lambda: np.random.normal(0, 4, (f.size, 2)) @ [1, 1j]
+    if len(program.ro_chs) == 2:  # I/Q return through a slightly imbalanced mixer (upper sideband)
+        imbalance = 0.95 * np.exp(1j * (np.radians(3.0) + 2 * np.pi * program.get_pulse_param(tone, "freq", as_array=True) * 30e-6))
+        return [s21 / 2 + noise(), -1j * imbalance * s21 / 2 + noise()]
+    return [s21 + noise()]
 
 
 def main():

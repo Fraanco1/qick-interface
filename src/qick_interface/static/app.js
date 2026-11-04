@@ -195,6 +195,14 @@ function markerMenu() {
     keep.dataset.control = "1";
     nodes.push(keep);
   }
+  const setupSets = state.measurements[state.data?.measurement]?.setup_sets ?? {};
+  const results = Object.entries(setupSets).filter(([name]) => state.data?.info?.[name] !== undefined);
+  if (results.length) {
+    const keep = button("Store RX calibration in setup", () => saveSetup(state.data.chip,
+      Object.fromEntries(results.map(([name, key]) => [key, +state.data.info[name].toPrecision(6)]))));
+    keep.dataset.control = "1";
+    nodes.push(keep);
+  }
   const target = state.measurements[state.data?.measurement ?? state.measurement]?.marker_sets;
   if (target) {
     const label = PARAMETER_LABELS[target]?.[0] ?? target;
@@ -259,6 +267,15 @@ function scaleMenu() {
   });
 }
 
+// Overwrite some fields of a chip's setup profile, e.g. with a calibration result.
+async function saveSetup(chip, changes) {
+  try {
+    await api("PUT", `/api/profiles/${encodeURIComponent(chip)}`, { ...state.profiles[chip], ...changes });
+    await loadProfiles($("chip").value);
+    message(`Stored in the setup of ${chip}.`);
+  } catch (e) { message(e.message, true); }
+}
+
 const PARAMETER_LABELS = {
   readout_freq_mhz: ["Readout frequency", formatFreq], readout_gain: ["Readout gain", String],
   qubit_freq_mhz: ["Qubit frequency", formatFreq], qubit_gain: ["Qubit gain", String],
@@ -314,11 +331,19 @@ const PROFILE_FIELDS = [
   ["q_dac", "Q output", ["DAC_A", "DAC_B"], null, null, "iq"],
   ["iq_phase_deg", "Q phase offset", "number", "°", "90 for an ideal mixer.", "I/Q cal"],
   ["iq_gain_ratio", "Q / I gain", "number", null, "1 for an ideal mixer.", "I/Q cal"],
-  ["readout_adc", "Readout input", ["ADC_B", "ADC_C", "ADC_D"]],
+  ["return_path", "Return path", ["real", "iq"], null, "I/Q: an I/Q mixer into two ADCs, combined in software."],
+  ["readout_adc", "Readout input", ["ADC_B", "ADC_C", "ADC_D"], null, null, "return:real"],
+  ["i_adc", "I input", ["ADC_B", "ADC_C", "ADC_D"], null, null, "return:iq"],
+  ["q_adc", "Q input", ["ADC_B", "ADC_C", "ADC_D"], null, null, "return:iq"],
+  ["rx_gain_ratio", "RX Q / I gain", "number", null, "From the RX I/Q calibration; 1 for an ideal mixer.", "return:iq"],
+  ["rx_phase_deg", "RX Q phase", "number", "°", "0 for an ideal mixer.", "return:iq"],
+  ["rx_delay_ps", "RX I/Q delay", "number", "ps", "About 48 ps per cm of I/Q cable difference.", "return:iq"],
 ];
+const NUMBER_FIELDS = ["iq_phase_deg", "iq_gain_ratio", "rx_gain_ratio", "rx_phase_deg", "rx_delay_ps"];
 
 const NEW_PROFILE = { chip: "", chip_type: "transmon", lo_mhz: null, sideband: "upper", output_path: "real",
-  readout_dac: "DAC_B", i_dac: "DAC_A", q_dac: "DAC_B", iq_phase_deg: 90, iq_gain_ratio: 1, readout_adc: "ADC_D" };
+  readout_dac: "DAC_B", i_dac: "DAC_A", q_dac: "DAC_B", iq_phase_deg: 90, iq_gain_ratio: 1, readout_adc: "ADC_D",
+  return_path: "real", i_adc: "ADC_D", q_adc: "ADC_C", rx_gain_ratio: 1, rx_phase_deg: 0, rx_delay_ps: 0 };
 
 // The Setup and I/Q cal menus edit the same profile; each shows its own fields and saves all of them.
 function setupMenu(menu) {
@@ -340,13 +365,16 @@ function setupMenu(menu) {
     rows[key].dataset.onlyFor = onlyFor || "";
     return rows[key];
   });
-  const showFields = () => {
-    for (const row of Object.values(rows)) {
-      const only = row.dataset.onlyFor;
-      row.hidden = menu === "I/Q cal" ? only !== "I/Q cal" : only === "I/Q cal" || (!!only && only !== controls.output_path.value);
-    }
+  // onlyFor: "I/Q cal" (that menu only), "real"/"iq" (output path), "return:real"/"return:iq" (return path)
+  const shown = (only) => {
+    if (menu === "I/Q cal") return only === "I/Q cal";
+    if (!only) return true;
+    if (only.startsWith("return:")) return only.slice(7) === controls.return_path.value;
+    return only === controls.output_path.value;
   };
+  const showFields = () => { for (const row of Object.values(rows)) row.hidden = !shown(row.dataset.onlyFor); };
   controls.output_path.onchange = showFields;
+  controls.return_path.onchange = showFields;
   showFields();
   controls.iq_phase_deg.step = "0.1";
   controls.iq_gain_ratio.step = "0.005";
@@ -355,8 +383,7 @@ function setupMenu(menu) {
   const save = button("Save setup", async () => {
     const profile = Object.fromEntries(Object.entries(controls).map(([k, c]) => [k, c.value]));
     profile.lo_mhz = profile.lo_mhz === "" ? null : Number(profile.lo_mhz);
-    profile.iq_phase_deg = Number(profile.iq_phase_deg);
-    profile.iq_gain_ratio = Number(profile.iq_gain_ratio);
+    for (const k of NUMBER_FIELDS) profile[k] = Number(profile[k]);
     try {
       await api("PUT", `/api/profiles/${encodeURIComponent(profile.chip)}`, profile);
       await loadProfiles(profile.chip);

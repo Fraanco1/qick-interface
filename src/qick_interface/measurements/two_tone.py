@@ -5,9 +5,8 @@ import numpy as np
 from pydantic import BaseModel, Field
 from qick.asm_v2 import AveragerProgramV2, QickSweep1D
 
-from ..board import readout_channel
 from ..frequency import plan_sweep, rf_from_if
-from ..iq import TonesMixin, outputs
+from ..iq import TonesMixin, inputs, outputs, send_readouts
 from ..profiles import SetupProfile
 from .base import Update, received_s21
 
@@ -35,21 +34,20 @@ class TwoToneParams(BaseModel):
 
 class _Program(TonesMixin, AveragerProgramV2):
     def _initialize(self, cfg):
-        ro = cfg["ro"]
         self.declare_outputs(cfg)
-        self.declare_readout(ch=ro, length=cfg["readout_length"])
-        self.add_readoutconfig(ch=ro, name="ro", freq=cfg["readout_freq"], gen_ch=cfg["outputs"][0].gen)
+        self.declare_inputs(cfg, length=cfg["readout_length"])
+        self.add_readout(cfg, "ro", freq=cfg["readout_freq"])
         self.add_loop("freq", cfg["points"])
         self.add_tone(cfg, "qubit", freq=cfg["qubit_freq"], length=cfg["qubit_length"], gain=cfg["qubit_gain"])
         self.add_tone(cfg, "readout", freq=cfg["readout_freq"], length=cfg["readout_pulse"],
                       gain=cfg["readout_gain"])
 
     def _body(self, cfg):
-        self.send_readoutconfig(ch=cfg["ro"], name="ro", t=0)
+        send_readouts(self, cfg, "ro")
         self.play_tone(cfg, "qubit", t=0)
         self.delay_auto(t=0.05)  # readout right after the qubit pulse
         self.play_tone(cfg, "readout", t=0)
-        self.trigger(ros=[cfg["ro"]], pins=[0], t=cfg["trigger_delay"])
+        self.read(cfg, pins=[0], t=cfg["trigger_delay"])
 
 
 class TwoTone:
@@ -73,7 +71,7 @@ class TwoTone:
         readout = plan_sweep(profile, params.readout_freq_mhz, params.readout_freq_mhz)
         program = _Program(board.soccfg, reps=params.averages, final_delay=params.final_delay_us, cfg={
             "outputs": outputs(board.soccfg, profile),
-            "ro": readout_channel(board.soccfg, profile.readout_adc),
+            "inputs": inputs(board.soccfg, profile),
             "qubit_freq": QickSweep1D("freq", qubit.if_start, qubit.if_stop),
             "readout_freq": readout.if_start,
             "points": params.points,
@@ -88,7 +86,7 @@ class TwoTone:
         rf = rf_from_if(profile, qubit_if)
 
         for i, iq in enumerate(board.run(program, params.rounds, should_stop), start=1):
-            s21 = received_s21(iq[0], program, "readout", profile)
+            s21 = received_s21(iq, program, "readout", profile)
             with np.errstate(divide="ignore"):  # no signal gives -inf dB, shown as a gap
                 mag_db = 20 * np.log10(np.abs(s21))
             # phase relative to the sweep's mean, so the qubit response stands out

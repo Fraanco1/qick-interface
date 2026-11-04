@@ -13,12 +13,14 @@ from .frequency import FrequencyError
 from .measurements.cw_time import CwTime
 from .measurements.resonator_sweep import ResonatorSweep
 from .measurements.rabi import Rabi
+from .measurements.rx_iq_cal import RxIqCal
 from .measurements.two_tone import TwoTone
 from .profiles import ChipParameters, SetupProfile, load_parameters, load_profiles, save_profile, update_parameters
 from .session import Busy, NotController, Session
 
 STATIC = Path(__file__).parent / "static"
-MEASUREMENTS = {"resonator_sweep": ResonatorSweep, "cw_time": CwTime, "two_tone": TwoTone, "rabi": Rabi}
+MEASUREMENTS = {"resonator_sweep": ResonatorSweep, "cw_time": CwTime, "two_tone": TwoTone, "rabi": Rabi,
+                "rx_iq_cal": RxIqCal}
 
 
 class RunRequest(BaseModel):
@@ -35,7 +37,8 @@ def create_app(board, data_dir: Path, profiles_dir: Path) -> FastAPI:
     @app.get("/api/measurements")
     def measurements():
         return {key: {"name": m.name, "params": m.Params.model_json_schema(), "x_axis": m.x_axis,
-                      "plots": m.plots, "marker_sets": m.marker_sets, "info_sets": m.info_sets}
+                      "plots": m.plots, "marker_sets": m.marker_sets, "info_sets": m.info_sets,
+                      "setup_sets": getattr(m, "setup_sets", {})}
                 for key, m in MEASUREMENTS.items()}
 
     @app.get("/api/profiles")

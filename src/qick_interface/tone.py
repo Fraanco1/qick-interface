@@ -10,9 +10,8 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 from qick.asm_v2 import AveragerProgramV2
 
-from .board import readout_channel
 from .frequency import plan_sweep
-from .iq import TonesMixin, outputs
+from .iq import TonesMixin, inputs, outputs
 from .profiles import SetupProfile
 
 LOOP_MAX = 2**23 - 1  # largest tProc loop count; two nested loops run for years
@@ -57,7 +56,7 @@ def tone_program(soccfg, profile: SetupProfile, tone: OutputTone):
     tuned = profile.model_copy(update=overrides)
     plan = plan_sweep(tuned, tone.rf_mhz, tone.rf_mhz, drive_only=True)
     pulsed = tone.mode == "pulsed"
-    cfg = {"outputs": outputs(soccfg, tuned), "ro": readout_channel(soccfg, profile.readout_adc),
+    cfg = {"outputs": outputs(soccfg, tuned), "inputs": inputs(soccfg, profile),
            "freq": plan.if_start, "gain": tone.gain, "pulsed": pulsed, "pulse_length": tone.pulse_length_us}
     if pulsed:
         return _ToneProgram(soccfg, reps=LOOP_MAX, final_delay=tone.period_us - tone.pulse_length_us, cfg=cfg)

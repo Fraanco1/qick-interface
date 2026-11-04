@@ -73,7 +73,28 @@ A setup profile with the **LO empty**, readout output DAC_B and readout input AD
 .venv/bin/python scripts/hardware_sweep.py 100 500 201  # start, stop (MHz), points
 ```
 
-It prints |S21| and the phase spread per round, and the total time (about 0.34 s per round for 1001 points × 100 averages).
+It prints |S21| and the phase spread per round, and the total time (about 0.34 s per round for 1001 points × 100 averages). It then checks CW Time: windows from 0.5 to 100 µs, the level against the sweep, noise against window length, phase between sweeps, and the real time per point.
+
+### I/Q return path
+
+```
+MMIQ I output ──cable A──▶ ADC_D        MMIQ Q output ──cable B──▶ ADC_C        (A and B phase-matched)
+```
+
+Cables of equal length matter: each centimetre of difference adds about 48 ps between I and Q, 3.5° at 200 MHz IF. The RX I/Q calibration removes what is left (see the user guide).
+
+**Before relying on it**, check once on the bench that the two readouts keep a fixed phase between runs:
+
+```
+DAC_B ──▶ power splitter ──▶ ADC_D
+                         └──▶ ADC_C
+```
+
+```bash
+.venv/bin/python scripts/hardware_two_readouts.py       # 10 runs, 100–1000 MHz
+```
+
+The phase spread between runs must be well under 1°. The delay it prints is the difference between the two cables and board paths.
 
 ## The LO
 

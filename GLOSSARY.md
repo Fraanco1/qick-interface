@@ -67,8 +67,12 @@ The values measured on one chip that later measurements start from, such as read
 _Avoid_: calibration (reserved for I/Q calibration), chip config, qubit params
 
 **I/Q calibration**:
-The Q phase offset and Q/I gain ratio that best suppress the image of an I/Q output path; part of the setup profile.
+The Q phase offset and Q/I gain ratio that best suppress the image of an I/Q output path (the TX side); part of the setup profile, tuned by hand with a spectrum analyzer.
 _Avoid_: mixer correction, IQ balance
+
+**RX I/Q calibration**:
+The Q/I gain ratio, phase offset and I/Q delay of an I/Q return path (mixer, I and Q cables, ADC paths), measured by the app and used to combine the I and Q readouts; part of the setup profile.
+_Avoid_: receiver correction, IQ imbalance correction
 
 ## Measurements
 

@@ -11,14 +11,15 @@ qick-interface/
 │   ├── board.py                # Board: the only code that talks to QICK
 │   ├── frequency.py            # RF ↔ IF planning, image frequencies, limits
 │   ├── profiles.py             # setup profiles and chip parameters, JSON per chip
-│   ├── iq.py                   # tones on one DAC or an I/Q pair (shared by all programs)
+│   ├── iq.py                   # tones on one DAC or an I/Q pair; readouts on one ADC or an I/Q pair
 │   ├── tone.py                 # output tone: continuous or pulse train; also I/Q calibration
 │   ├── measurements/
 │   │   ├── base.py             # what a measurement produces (Update)
 │   │   ├── resonator_sweep.py
 │   │   ├── cw_time.py          # S21 against time at one frequency, until Stop
 │   │   ├── two_tone.py
-│   │   └── rabi.py             # amplitude or length, damped-cosine fit
+│   │   ├── rabi.py             # amplitude or length, damped-cosine fit
+│   │   └── rx_iq_cal.py        # imbalance of the I/Q return path: gain, phase, delay
 │   ├── session.py              # controller/viewers, one worker, live updates
 │   ├── storage.py              # saves runs as .npz + .json
 │   ├── server.py               # FastAPI: REST + WebSocket + static page
@@ -47,13 +48,13 @@ Pure functions, no hardware. Given a setup profile and an RF range, returns the 
 
 ### Setup profiles and chip parameters (`profiles.py`)
 
-One JSON file per chip in `profiles/`: chip name and type, LO frequency and sideband, output path (real / I/Q) with its DACs and I/Q calibration, readout ADC. The LO is a plain field until a real LO driver exists; the driver will be added here, not before. Not yet built: return path I/Q, fluxonium control line, flux bias.
+One JSON file per chip in `profiles/`: chip name and type, LO frequency and sideband, output path (real / I/Q) with its DACs and I/Q calibration, readout ADC. The LO is a plain field until a real LO driver exists; the driver will be added here, not before. Not yet built: fluxonium control line, flux bias.
 
 Chip parameters (readout and qubit frequency and gain, π-pulse gain and σ) live in `profiles/parameters/<chip>.json`, are filled from measurement results, and pre-fill measurement forms.
 
 ### Tones (`iq.py`)
 
-Every program plays its tones through `TonesMixin`: on the real output path a tone is one pulse on one DAC; on the I/Q path it is the same pulse on the I and Q DACs with the profile's calibrated phase offset and gain ratio, both frequency-matched to the readout so they stay phase-locked.
+Every program plays its tones and opens its readouts through `TonesMixin`. On the I/Q return path the I and Q readouts share one readout config and are triggered together, and `received_s21` combines them as Y_I + j·Y_Q after the RX calibration ([s21.md](s21.md)). For tones: on the real output path a tone is one pulse on one DAC; on the I/Q path it is the same pulse on the I and Q DACs with the profile's calibrated phase offset and gain ratio, both frequency-matched to the readout so they stay phase-locked.
 
 ### Measurements (`measurements/`)
 
