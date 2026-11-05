@@ -65,7 +65,7 @@ class _Program(TonesMixin, AveragerProgramV2):
                           line="control")
         elif cfg["shape"] == "gaussian edges":  # the flat part is swept; the ramps are the two halves of 8σ
             sigma = cfg["edge_sigma"]
-            self.add_gauss_envelope(cfg, "edges", sigma=sigma, length=8 * sigma, line="control")
+            self.add_gauss_envelope(cfg, "edges", sigma=sigma, length=8 * sigma, line="control", flat_top=True)
             self.add_tone(cfg, "qubit", freq=cfg["qubit_freq"], gain=cfg["qubit_gain"], length=cfg["swept"],
                           style="flat_top", envelope="edges", line="control")
         else:

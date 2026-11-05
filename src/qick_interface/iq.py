@@ -2,7 +2,10 @@
 (one ADC, or an I/Q pair).
 
 A tone named "x" is the pulse "x" on the first DAC and, on the I/Q path, also "x_q" on the
-Q DAC with the calibrated phase offset and gain ratio. Both pulses are frequency-matched to
+Q DAC with the calibrated phase offset and gain ratio. The Q delay (Q's DAC running ahead of I's) is
+taken off Q's carrier phase at each frequency, and off the envelope's timing: the leading DAC starts
+its pulse later by whole clock cycles, and a Gaussian envelope on it is shifted by the remaining
+fraction of a cycle. A flat pulse can only move by whole cycles (within 0.8 ns). Both pulses are frequency-matched to
 the readouts, which keeps everything phase-locked. On the I/Q return path the I and Q readouts
 share one readout config and are triggered together.
 """
@@ -92,16 +95,44 @@ class TonesMixin:
         """A constant pulse by default; pass style="arb" and envelope= for a shaped one."""
         pulse_args.setdefault("style", "const")
         self._tone_lines = {**getattr(self, "_tone_lines", {}), name: line}
+        # the DAC that runs ahead starts later; a shaped envelope takes the remainder (add_gauss_envelope)
+        whole = round if pulse_args["style"] == "const" else np.floor
+        self._tone_starts = {**getattr(self, "_tone_starts", {}),
+                             name: [whole(lag / cycle) * cycle * 1e-6 for lag, cycle in self._lags(cfg[line])]}
         for out in cfg[line]:
             # a DAC running τ ahead adds 360°·f·τ; freq may be a sweep, and the phase then sweeps with it
             phase = out.phase_deg - freq * (360e-6 * out.lead_ps) if out.lead_ps else out.phase_deg
             self.add_pulse(ch=out.gen, name=name + out.suffix, ro_ch=cfg["inputs"][0], freq=freq,
                            phase=phase, gain=gain * out.gain_factor, **pulse_args)
 
-    def add_gauss_envelope(self, cfg, name, sigma, length, line="outputs"):
-        for out in cfg[line]:
-            self.add_gauss(ch=out.gen, name=name, sigma=sigma, length=length, even_length=True)
+    def _lags(self, outs):
+        """For each output: how much later it must play to line up with the slowest DAC (ps), and its
+        clock cycle (ps)."""
+        first = min(out.lead_ps for out in outs)
+        return [(out.lead_ps - first, 1e6 / self.soccfg["gens"][out.gen]["f_fabric"]) for out in outs]
+
+    def add_gauss_envelope(self, cfg, name, sigma, length, line="outputs", flat_top=False):
+        """A Gaussian envelope, as QICK's add_gauss(even_length=True) samples it. On a DAC that must play
+        later by a fraction of a clock cycle, the Gaussian is shifted by that fraction. flat_top: the
+        envelope is split into the edges of a flat_top pulse; the falling half then starts at the top."""
+        for out, (lag, cycle) in zip(cfg[line], self._lags(cfg[line])):
+            fraction_ps = lag - np.floor(lag / cycle) * cycle
+            if fraction_ps == 0:
+                self.add_gauss(ch=out.gen, name=name, sigma=sigma, length=length, even_length=True)
+                continue
+            gen = self.soccfg["gens"][out.gen]
+            per_clk = gen["samps_per_clk"]
+            samples = 2 * self.us2cycles(gen_ch=out.gen, us=length / 2) * per_clk  # as add_gauss counts them
+            sig = self.us2cycles(gen_ch=out.gen, us=sigma / (np.sqrt(2.0) if self.GAUSS_BUG else 1.0),
+                                 as_float=True) * per_clk
+            shift = fraction_ps * 1e-6 * gen["f_fabric"] * per_clk  # in samples
+            x = np.arange(samples) - shift  # where each sample falls on the unshifted envelope
+            env = self.soccfg.get_maxv(out.gen) * np.exp(-(x - (samples / 2 - 0.5)) ** 2 / (2 * sig ** 2))
+            env[x < 0] = 0  # before the envelope starts
+            if flat_top:  # still on the flat part, which plays between the two halves
+                env[(np.arange(samples) >= samples // 2) & (x < samples // 2)] = self.soccfg.get_maxv(out.gen)
+            self.add_envelope(ch=out.gen, name=name, idata=env)
 
     def play_tone(self, cfg, name, t=0):
-        for out in cfg[self._tone_lines[name]]:
-            self.pulse(ch=out.gen, name=name + out.suffix, t=t)
+        for out, later in zip(cfg[self._tone_lines[name]], self._tone_starts[name]):
+            self.pulse(ch=out.gen, name=name + out.suffix, t=t + later)
