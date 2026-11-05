@@ -6,7 +6,7 @@ How to measure a chip with QICK Analyzer. Words in *italics* are defined in the 
 
 Open `http://<lab-PC-address>:8080`.
 
-- **Title bar:** the *chip* being measured and its **Setup** key, the *measurement*, who controls the board, your name, and **Take control**.
+- **Title bar:** the *chip* being measured and its **Setup** key, **Help** (the steps to measure, in short, with a link to this guide), the *measurement*, who controls the board, your name, and **Take control**.
 - **Screen:** two plot windows on a 10-division grid. The line above each window shows the trace, its scale per division and the reference value (at the ▶ arrow), like a PNA-X.
 - **Soft keys** (right): the measurement's menus (with **Output** in two-tone and Rabi), then, under a line, the display menus **Scale** and **Marker**. A menu shows only the fields that apply to the current mode. **Run sweep** (**Run** in CW Time) and **Stop** are at the bottom.
 - **Status bar:** what is on screen (measurement, start, stop, points, round), the board state (**Hold**, **Measuring** or **Tone**), and messages. Errors show in red.
@@ -78,7 +78,7 @@ On the I/Q return path the app combines the I and Q readouts as Y_I + j·Y_Q. Th
 1. If the output is I/Q too, do the [I/Q calibration](#iq-calibration-iq-chips-only) of the output first: an image on the test tone would bias this one.
 2. Measurement: **RX I/Q calibration**. Set **Start** and **Stop** to the band you will measure in, for example the readout frequency ± 50 MHz. The chip can stay connected: everything before the mixer cancels out.
 3. **Run sweep**. Tr1 shows the Q/I gain and Tr2 the Q phase error against frequency, each with its fit (dashed). The screen shows the fitted **Q/I gain**, **Q phase**, **I/Q delay** and the expected **Image rejection** after correction; the scatter (noise) limits that estimate, so average more if it is low.
-4. **Marker → Store RX calibration in setup**. Every measurement on this chip now uses it.
+4. **Marker → Store in setup: RX calibration**. Every measurement on this chip now uses it.
 
 Recalibrate after changing the I/Q cables, or the LO frequency or power by much, or before measuring far from the calibrated band.
 
@@ -206,7 +206,7 @@ Gain fields also show their drive power at the DAC output, e.g. "≈ −7.0 dBm 
 Both come from the **board calibration** (Setup → **Board** tab), shared by every chip: for each DAC, its output power at gain 1 against frequency; for each ADC, the input power that reads full scale. They start from the data sheets (`docs/research/converter-power-scale.md`). To make them real:
 
 1. **ADC, from the loopback:** cable a DAC to an ADC with a short cable, pick them under **Loopback** and press **Calibrate ADC from loopback** (a few seconds). The ADC's table then follows the DAC's, so a loopback reads the DAC's power (to within the cable's ±0.7 dB ripple, which the calibration averages out). On the bench the ADC came out 2.6–7 dB above the data sheet, rising with frequency.
-2. **DAC, with a signal analyzer (later):** measure the DAC's output at gain 1 at a few frequencies, type them in its table (one "MHz dBm" pair per line), set **Source**, and press **Save board**. Then calibrate the ADC from the loopback again.
+2. **DAC, with a signal analyzer (by hand for now; planned to be automatic with a Keysight X-series analyzer):** measure the DAC's output at gain 1 at a few frequencies, type them in its table (one "MHz dBm" pair per line), set **Source**, and press **Save board**. Then calibrate the ADC from the loopback again.
 
 ## Markers
 

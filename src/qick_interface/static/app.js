@@ -28,6 +28,7 @@ const state = {
   parameters: {},        // chip parameters of the selected chip
   controller: null, controllerName: null, running: false, tone: null,
   setupOpen: false, setupTab: "Setup",  // the chip's setup panel
+  helpOpen: false,  // the help panel; it and the setup take turns over the screen
   menu: store.get("menu", "Sweep"),
   data: null,            // last update {measurement, x, traces, x_axis, info}
   xAxis: null,           // {title, unit} of what is on screen
@@ -484,10 +485,21 @@ function boardMenu() {
 }
 
 function toggleSetup(open = !state.setupOpen) {
+  if (open && state.helpOpen) toggleHelp(false);
   state.setupOpen = open;
   renderSetupPanel();
   if (open) $("setup-body").querySelector("input, select")?.focus();
   else $("setup-key").focus();
+}
+
+// ---- help: static text in index.html ----
+function toggleHelp(open = !state.helpOpen) {
+  if (open && state.setupOpen) toggleSetup(false);
+  state.helpOpen = open;
+  $("help-panel").hidden = !open;
+  $("help-key").setAttribute("aria-expanded", String(open));
+  if (open) $("help-close").focus();
+  else $("help-key").focus();
 }
 
 async function deleteChip(chip) {
@@ -893,7 +905,13 @@ async function main() {
   $("chip").onchange = async () => { store.set("chip", $("chip").value); await loadParameters(); renderMenus(); renderSetupPanel(); };
   $("setup-key").onclick = () => toggleSetup();
   $("setup-close").onclick = () => toggleSetup(false);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.setupOpen) toggleSetup(false); });
+  $("help-key").onclick = () => toggleHelp();
+  $("help-close").onclick = () => toggleHelp(false);
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (state.setupOpen) toggleSetup(false);
+    if (state.helpOpen) toggleHelp(false);
+  });
   $("take-control").onclick = async () => {
     if (!$("name").value.trim()) { $("name").focus(); message("Type your name first, so others know who controls the board.", true); return; }
     try { await api("POST", "/api/control"); } catch (e) { message(e.message, true); }

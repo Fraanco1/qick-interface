@@ -113,7 +113,7 @@ A measurement that sweeps the qubit tone frequency while reading out at a fixed 
 _Avoid_: qubit spectroscopy, pump-probe
 
 **Rabi**:
-A measurement that sweeps the qubit tone's amplitude or length and records the readout response.
+A measurement that sweeps the qubit tone's amplitude or length and records the readout response. An amplitude sweep plays a Gaussian pulse; a length sweep a flat pulse, or one with Gaussian edges (QICK's flat_top), whose flat part is swept.
 _Avoid_: Rabi oscillation (for the measurement itself)
 
 **Trace**:

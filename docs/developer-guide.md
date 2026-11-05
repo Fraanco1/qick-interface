@@ -164,6 +164,8 @@ A field's value is what the user typed, else the chip parameter it starts from, 
 
 Style tokens (colors, font) are CSS variables at the top of `style.css`.
 
+The **Help** panel is static text in `index.html` (the steps to measure, one line per measurement). When a measurement, mode or key is added or renamed, update it there too, and keep it short: it links to `docs/user-guide.md` on GitHub (`main`) for detail.
+
 ## REST and WebSocket interface
 
 Requests that change anything carry `X-Client-Id` (a random id per browser) and are refused with 403 unless the client is the controller. `X-Client-Name` is URL-encoded.

@@ -9,7 +9,7 @@ It measures transmon and fluxonium chips:
 - **Resonator sweep:** |S21| and phase of the readout resonator, pulsed or CW (tone always on, like a PNA-X), with the cable delay removed.
 - **CW Time:** |S21| and phase against time at one frequency, redrawn sweep after sweep until Stop, like the PNA-X sweep type of the same name.
 - **Two-tone spectroscopy:** sweep a qubit tone while reading out at the resonator.
-- **Rabi:** sweep the qubit pulse amplitude or length, with a fitted π-pulse.
+- **Rabi:** sweep the qubit pulse amplitude (Gaussian) or length (flat, or with Gaussian edges), with a fitted π-pulse.
 - **I/Q return path:** an I/Q mixer into two ADCs, combined in software to reject the image band, with an automatic **RX I/Q calibration** (gain, phase, delay).
 - **Scope sequences:** two-tone and Rabi play their own shot at one point, with an oscilloscope trigger, to check the pulses. A continuous tone for I/Q calibration.
 
@@ -46,11 +46,11 @@ The board must be running the QICK Pyro4 service; see [hardware setup](docs/hard
 
 | Document | Read it if you want to |
 |---|---|
-| [User guide](docs/user-guide.md) | measure a chip with the page |
+| [User guide](docs/user-guide.md) | measure a chip with the page (the page's **Help** key has the steps in short) |
 | [How S21 is computed](docs/s21.md) | know what the traces mean, and how they compare with a PNA-X |
 | [Hardware setup](docs/hardware-setup.md) | wire the bench, install or repair the board service |
 | [Developer guide](docs/developer-guide.md) | change the code or add a measurement |
 | [Architecture](docs/architecture.md) | see how the modules fit together |
 | [Glossary](GLOSSARY.md) | know exactly what a term means here |
 | [Decision records](docs/adr/) | know why things are the way they are |
-| [Research notes](docs/research/) | look up QICK, MKIDGen3 or mixer facts, with sources |
+| [Research notes](docs/research/) | look up QICK, MKIDGen3, mixer or pulse-shape facts, with sources |

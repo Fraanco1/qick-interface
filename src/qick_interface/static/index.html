@@ -17,6 +17,7 @@
       <select id="chip"></select>
     </label>
     <button id="setup-key" class="key" type="button" aria-expanded="false" aria-controls="setup-panel">Setup</button>
+    <button id="help-key" class="key" type="button" aria-expanded="false" aria-controls="help-panel">Help</button>
     <label class="chip-pick">Measurement
       <select id="measurement"></select>
     </label>
@@ -48,6 +49,91 @@
         <button id="setup-close" class="key" type="button" aria-label="Close setup">Close</button>
       </header>
       <form class="setup-body" id="setup-body" novalidate></form>
+    </section>
+
+    <section class="setup-panel help-panel" id="help-panel" aria-labelledby="help-title" hidden>
+      <header class="setup-head">
+        <h2 id="help-title">How to measure</h2>
+        <a class="doc-link" href="https://github.com/Fraanco1/qick-interface/blob/main/docs/user-guide.md"
+           target="_blank" rel="noopener">More detail: user guide</a>
+        <button id="help-close" class="key" type="button" aria-label="Close help">Close</button>
+      </header>
+      <div class="help-body">
+        <h3>Steps, in order</h3>
+        <ol>
+          <li><b>Take control.</b> Type <b>Your name</b>, press <b>Take control</b>. Only the controller changes
+            settings; everyone else watches live. Talk to the current controller first.</li>
+          <li><b>Calibrate the board's power (once per board; needed for dBm).</b> In <b>Setup → Board</b>:
+            <ol type="a">
+              <li><b>DAC:</b> measure each DAC's output at gain 1 at a few frequencies with a signal analyzer. Type
+                them in its <b>output at gain 1</b> table (one "MHz dBm" per line), set <b>Source</b>, press
+                <b>Save board</b>.</li>
+              <li><b>ADC, from a loopback:</b> cable a DAC to an ADC with a short cable, pick them in <b>From DAC</b>
+                and <b>To ADC</b>, press <b>Calibrate ADC from loopback</b> (a few seconds).</li>
+            </ol>
+            Until then both use the data sheets. Shared by every chip.</li>
+          <li><b>Set up the chip.</b> Press <b>Setup</b>: chip name, LO frequency (empty with no mixer) and sideband,
+            output and return path (Real or I/Q) with their DACs and ADCs, and a <b>Control line</b> if the qubit tone
+            has its own DAC (fluxonium). Press <b>Measure</b> next to <b>Time of flight</b>, then <b>Save setup</b>.
+            <ul>
+              <li><b>The LO:</b> unless the app was started with <code>--lo</code> (the status bar then shows the LO it
+                set), set the CXG by hand to the setup's LO frequency and power, RF on. The app only uses the value to
+                convert between RF and IF; a wrong LO puts every frequency off, with no warning.</li>
+              <li><b>Flux bias</b> (fluxonium) is set by hand on its current source, outside the app.</li>
+              <li>Frequencies you type are RF, in MHz. On a control line the qubit frequency is the DAC's own (no
+                mixer, up to 4915 MHz).</li>
+            </ul></li>
+          <li><b>I/Q chips only: calibrate the mixers.</b> After every board power-up, <b>Setup → I/Q cal → Measure</b>
+            the Q delay (both DACs on the scope). Then <b>Tone on</b> and adjust Q phase and Q / I gain until the image
+            on the spectrum analyzer is smallest; save. With an I/Q return, run <b>RX I/Q calibration</b> and press
+            <b>Marker → Store in setup: RX calibration</b>.</li>
+          <li><b>Find the resonator.</b> <b>Resonator sweep</b>: set Start and Stop, <b>Run sweep</b>. Once per setup,
+            run a wide sweep and press <b>Marker → Store in setup: electrical delay</b>. Then <b>Marker → Min</b> and
+            <b>Marker → Readout frequency</b>.</li>
+          <li><b>Find the qubit.</b> <b>Two-tone spectroscopy</b>: sweep the qubit tone (the readout frequency is
+            already filled in). Put the marker on the dip or peak, press <b>Marker → Qubit frequency</b>.</li>
+          <li><b>Calibrate the π pulse.</b> <b>Rabi</b>, Sweep = Amplitude: press <b>Marker → Store π-pulse gain</b>
+            when the fit shows it. Or Sweep = Length, to find the π-pulse length.</li>
+          <li><b>Check the pulses (optional).</b> In Two-tone or Rabi, <b>Output → Play sequence</b> repeats one shot;
+            trigger the scope on PMOD0_0 (1.8 V). <b>Off</b> stops it.</li>
+        </ol>
+        <p>Each step fills in <i>chip parameters</i> that the next measurement starts from. <b>Stop</b> ends a run
+          after the current round; every run is saved in <code>data/&lt;date&gt;/</code>.</p>
+
+        <h3>Measurements</h3>
+        <dl>
+          <dt>Resonator sweep</dt>
+          <dd>|S21| and phase against frequency. <b>Pulsed</b> (default), or <b>CW</b> with the tone always on, for
+            high-Q resonators.</dd>
+          <dt>CW Time</dt>
+          <dd>|S21| and phase against time at one frequency, sweep after sweep until <b>Stop</b>. Watches drifts and
+            jumps.</dd>
+          <dt>Two-tone spectroscopy</dt>
+          <dd>Sweeps a qubit tone, then reads out at the resonator. Set the repetition delay to about 5×T1.</dd>
+          <dt>Rabi</dt>
+          <dd><b>Amplitude</b>: a Gaussian pulse of width Gaussian σ, gain swept. <b>Length</b>: the pulse length
+            swept, with Shape <b>Flat</b> or <b>Gaussian edges</b> (smoother, for fast drives; half the drive at the
+            same gain).</dd>
+          <dt>RX I/Q calibration</dt>
+          <dd>Balances the two ADC paths of an I/Q return (gain, phase, delay). Only for an I/Q return path.</dd>
+        </dl>
+
+        <h3>Display and settings</h3>
+        <dl>
+          <dt>Menus</dt>
+          <dd>The keys on the right hold each measurement's settings. A menu shows only what applies to the current
+            mode. Gain fields show their drive power in dBm.</dd>
+          <dt>Scale</dt>
+          <dd>Autoscale, or a fixed scale per division and reference. <b>Units</b>: relative, or absolute power at the
+            ADC (dBm, mV).</dd>
+          <dt>Marker</dt>
+          <dd>Click a trace to place it. <b>Min</b>, <b>Max</b>, and keys that store the value in the chip's
+            parameters.</dd>
+          <dt>Setup → Board</dt>
+          <dd>The power calibration of the DACs and ADCs (step 2), behind the dBm units and the drive power
+            hints.</dd>
+        </dl>
+      </div>
     </section>
 
     <aside class="softkeys" aria-label="Soft keys">
