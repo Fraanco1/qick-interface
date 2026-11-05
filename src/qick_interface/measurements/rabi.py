@@ -92,11 +92,11 @@ def _qubit_pulse_us(cfg):
     return cfg["swept"] + (8 * cfg["edge_sigma"] if cfg["shape"] == "gaussian edges" else 0)
 
 
-def _check_shortest(soccfg, profile, params, length_us, field):
+def _check_lengths(soccfg, profile, params, length_us, field):
     """QICK plays no pulse shorter than 3 cycles of the generator's clock (asm_v2: "shorter than the
-    min of 3"); say so in the app's terms before QICK does. length_us: the shortest flat pulse asked
-    for (a length sweep's Start, or the Output length), named by `field`; a Gaussian lasts 4σ, and so
-    does each Gaussian edge, a segment of its own."""
+    min of 3"), nor an envelope longer than its waveform memory; say so in the app's terms before QICK
+    does. length_us: the shortest flat pulse asked for (a length sweep's Start, or the Output length),
+    named by `field`; a Gaussian lasts 4σ, and so does each Gaussian edge, a segment of its own."""
     gen = control_outputs(soccfg, profile)[0].gen
     shortest_us = soccfg.cycles2us(3, gen_ch=gen)
     cycle_ns = 1e3 / soccfg["gens"][gen]["f_fabric"]
@@ -105,6 +105,12 @@ def _check_shortest(soccfg, profile, params, length_us, field):
         raise ValueError(f"{limit}; set {field} to at least {shortest_us:.4f} µs.")
     if params.sweep == "amplitude" and 4 * params.sigma_us < shortest_us:
         raise ValueError(f"{limit}, and the Gaussian lasts 4σ; set σ to at least {shortest_us / 4 * 1e3:.2f} ns.")
+    # a shaped pulse is stored in the generator's waveform memory (65536 samples on this firmware)
+    g = soccfg["gens"][gen]
+    longest_us = g["maxlen"] / (g["samps_per_clk"] * g["f_fabric"])
+    if params.sweep == "amplitude" and 4 * params.sigma_us > longest_us:
+        raise ValueError(f"The longest qubit envelope is {longest_us:.2f} µs (the DAC's waveform memory), and the "
+                         f"Gaussian lasts 4σ; set σ to at most {longest_us / 4:.3f} µs.")
     if params.sweep == "length" and params.shape == "gaussian edges" and 4 * params.edge_sigma_us < shortest_us:
         raise ValueError(f"{limit}, and each edge lasts 4σ; set Edge σ to at least {shortest_us / 4 * 1e3:.2f} ns.")
 
@@ -156,13 +162,13 @@ class Rabi:
     def sequence(cls, soccfg, profile: SetupProfile, params: RabiParams):
         """One shot at the Output menu's gain (or length), repeated until silenced, for an oscilloscope."""
         at = params.scope_gain if params.sweep == "amplitude" else params.scope_length_us
-        _check_shortest(soccfg, profile, params, params.scope_length_us, "the Output length")
+        _check_lengths(soccfg, profile, params, params.scope_length_us, "the Output length")
         return cls._program(soccfg, profile, params, at, points=LOOP_MAX, reps=LOOP_MAX, scope=True)
 
     @classmethod
     def run(cls, board, profile: SetupProfile, params: RabiParams,
             should_stop: Callable[[], bool] = lambda: False) -> Iterator[Update]:
-        _check_shortest(board.soccfg, profile, params, min(params.start, params.stop), "Start")
+        _check_lengths(board.soccfg, profile, params, min(params.start, params.stop), "Start")
         program = cls._program(board.soccfg, profile, params, QickSweep1D("sweep", params.start, params.stop),
                                points=params.points, reps=params.averages)
         x = cls.x_values(program)

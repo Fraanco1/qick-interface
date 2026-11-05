@@ -159,7 +159,7 @@ Measurement: **Rabi**. Qubit and readout frequencies are filled in from steps 1 
 
   See `docs/research/pulse-shapes.md` for why these shapes.
 
-**Readout → Delay before readout** (default 0.05 µs) sets the wait from the end of the qubit pulse to the start of the readout pulse; 0 starts the readout right away. The board plays no pulse shorter than 3 cycles of its 1.63 ns clock: a flat pulse is at least 4.9 ns (start a length sweep at 0.005 µs), and a Gaussian, or a Gaussian edge, needs σ of at least 1.22 ns. Lengths are rounded to whole cycles (1.63 ns); the x-axis shows the lengths actually played. Shorter values are refused with a message saying so.
+**Readout → Delay before readout** (default 0.05 µs) sets the wait from the end of the qubit pulse to the start of the readout pulse; 0 starts the readout right away. The board plays no pulse shorter than 3 cycles of its 1.63 ns clock: a flat pulse is at least 4.9 ns (start a length sweep at 0.005 µs), and a Gaussian, or a Gaussian edge, needs σ of at least 1.22 ns. A Gaussian is also stored in the DAC's 6.67 µs waveform memory, so its σ is at most 1.666 µs (Edge σ is capped at 0.5 µs). Lengths are rounded to whole cycles (1.63 ns); the x-axis shows the lengths actually played. Shorter values are refused with a message saying so.
 
 **Tr1** is the readout signal along the direction it moves in the I/Q plane, with a damped-cosine fit as a dashed white line. **Tr2** is the phase.
 

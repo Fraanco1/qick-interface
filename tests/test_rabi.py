@@ -200,3 +200,20 @@ def test_the_scope_marker_covers_the_edges_too():
 
     marker = next(m for m in program.macro_list if type(m).__name__ == "Trigger" and m.pins)
     assert marker.width == pytest.approx(0.1 + 8 * 0.005, abs=0.002)
+
+
+LONGEST = "The longest qubit envelope is 6.67 µs"  # the generator's waveform memory: 65536 samples at 9830.4 MHz
+
+
+def test_a_gaussian_longer_than_the_waveform_memory_is_refused_in_plain_words():
+    # (Edge σ is capped by its field at 0.5 µs: 8σ = 4 µs fits)
+    params = RabiParams(**BASE, sweep="amplitude", start=0.0, stop=1.0, sigma_us=1.7)  # 4σ = 6.8 µs
+
+    with pytest.raises(ValueError, match=LONGEST):
+        Rabi.sequence(SOCCFG, TRANSMON, params)
+    with pytest.raises(ValueError, match=LONGEST):
+        list(Rabi.run(FakeBoard(SOCCFG, oscillating(0.4)), TRANSMON, params))
+
+
+def test_the_longest_envelope_that_fits_is_accepted():
+    Rabi.sequence(SOCCFG, TRANSMON, RabiParams(**BASE, sweep="amplitude", sigma_us=1.66))
