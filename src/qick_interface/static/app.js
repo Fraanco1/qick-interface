@@ -282,13 +282,59 @@ function setScale(k, s) {
   traceLines();
 }
 
+// Horizontal scale, for measurements that offer one (the Oscilloscope): like a scope's time/div and position.
+// Display only, per browser and measurement; Autoscale shows the whole record.
+const xScaleKey = () => `xscale.${state.data?.measurement ?? state.measurement}`;
+const xScaleOf = () => store.get(xScaleKey(), { auto: true });
+const hasXScale = () => !!state.measurements[state.data?.measurement ?? state.measurement]?.x_scale;
+
+function xRange(min, max) {
+  const s = xScaleOf();
+  return !hasXScale() || s.auto ? [min, max] : [s.centre - 5 * s.perDiv, s.centre + 5 * s.perDiv];
+}
+
+function setXScale(s) {
+  store.set(xScaleKey(), s);
+  for (const k of [0, 1]) if (plots[k]?.data) plots[k].setData(plots[k].data);  // recomputes the x range
+  traceLines();
+}
+
+function horizontalMenu() {
+  if (!hasXScale()) return [];
+  const s = xScaleOf(), title = document.createElement("h3"), unit = xUnit();
+  title.className = "subhead"; title.textContent = "Horizontal";
+  const mode = document.createElement("select");
+  mode.append(new Option("On (whole record)", "auto"), new Option("Off (fixed)", "fixed"));
+  mode.value = s.auto ? "auto" : "fixed";
+  mode.onchange = () => {
+    const x = state.data?.x ?? [0, 1], lo = x[0], hi = x[x.length - 1];
+    setXScale(mode.value === "auto" ? { ...s, auto: true } : { auto: false, perDiv: (hi - lo) / 10, centre: (lo + hi) / 2 });
+    renderMenuBody();
+  };
+  const number = (key, check) => {
+    const input = document.createElement("input");
+    input.type = "number"; input.inputMode = "decimal"; input.step = "any"; input.disabled = s.auto;
+    input.value = s[key] === undefined ? "" : +(+s[key]).toPrecision(6);
+    input.onchange = () => {
+      const v = Number(input.value);
+      if (input.value === "" || !check(v)) { input.value = +(+s[key]).toPrecision(6); return; }
+      setXScale({ ...xScaleOf(), [key]: v });
+    };
+    return input;
+  };
+  return [title, field("Autoscale", mode),
+    field("Time per division", number("perDiv", (v) => v > 0), `${unit}/div`),
+    field("Centre", number("centre", Number.isFinite), unit, "The time at the middle of the screen.")];
+}
+
 function scaleMenu() {
   const units = document.createElement("select");
   units.append(new Option("Relative (dB, a.u.)", "relative"), new Option("Absolute at the ADC (dBm, mV)", "absolute"));
   units.value = store.get("units", "relative");
   units.onchange = () => setUnits(units.value);
   const head = [field("Units", units, null,
-    "Absolute: power at the ADC input, from the board calibration (Setup → Board). Phase is unchanged.")];
+    "Absolute: power at the ADC input, from the board calibration (Setup → Board). Phase is unchanged."),
+    ...horizontalMenu()];
   return [...head, ...plotDefs().flatMap((def, k) => {
     const s = scaleOf(k), title = document.createElement("h3");
     title.className = "subhead"; title.textContent = `Tr${k + 1} ${def.title}`;
@@ -792,7 +838,7 @@ function makePlot(el, color, nTraces, k) {
     width: el.clientWidth, height: el.clientHeight,
     legend: { show: false },
     cursor: { sync: { key: "screen" }, points: { show: false }, drag: { x: false, y: false } },
-    scales: { x: { time: false }, y: { range: (u, min, max) => yRange(k, min, max) } },
+    scales: { x: { time: false, range: (u, min, max) => xRange(min, max) }, y: { range: (u, min, max) => yRange(k, min, max) } },
     axes: [
       { ...axis, splits: tenDivisions, size: 30, values: (u, vals) => {
           const every = u.width < 500 ? 5 : 2, div = (vals[10] - vals[0]) / 10;
@@ -966,7 +1012,9 @@ function traceLines() {
     if (def.iq) { line.textContent = `${label}   ${+plots[k].div.toPrecision(3)} ${def.unit}/div on I and Q`; return; }
     const div = (s.max - s.min) / 10, sc = scaleOf(k), ref = sc.auto ? s.min + 5 * div : sc.ref;
     const refText = minus(String(+ref.toFixed(decimalsFor(div) + 1)));
-    line.textContent = `${label}   ${+div.toPrecision(3)} ${def.unit}/div   Ref ${refText} ${def.unit}${sc.auto ? "" : "   Fixed"}`;
+    const xs = plots[k].scales.x, horizontal = hasXScale() && k === 0 && xs?.min !== undefined
+      ? `   │   ${+((xs.max - xs.min) / 10).toPrecision(3)} ${xUnit()}/div` : "";
+    line.textContent = `${label}   ${+div.toPrecision(3)} ${def.unit}/div   Ref ${refText} ${def.unit}${sc.auto ? "" : "   Fixed"}${horizontal}`;
   });
 }
 

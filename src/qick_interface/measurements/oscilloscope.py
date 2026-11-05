@@ -97,6 +97,7 @@ class _Program(TonesMixin, AveragerProgramV2):
 class Oscilloscope:
     name = "Oscilloscope"
     run_key = "Run"  # it redraws until Stop
+    x_scale = True  # the page offers time per division and a centre (Scale menu), like a scope's horizontal controls
     Params = OscilloscopeParams
     x_axis = {"title": "Time", "unit": "µs"}
     drive_fields = {

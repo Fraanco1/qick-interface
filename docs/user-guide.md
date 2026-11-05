@@ -143,6 +143,7 @@ Measurement: **Oscilloscope**. A two-channel scope on the board's ADC inputs: vo
 | Readout | Readout frequency (from the chip parameters), gain, pulse length |
 | Qubit | **Qubit pulse**: none (default), flat (as in two-tone), Gaussian or Gaussian edges (as in Rabi); then its frequency, gain, length or σ, and the delay before readout |
 
+- **Scale → Horizontal** sets the time per division and the centre time, like the scope's horizontal controls, to zoom into the record (Autoscale shows the whole 1.85 µs). It only changes your screen; the vertical scale works as in the other measurements.
 - Each window shows ADC counts, or **mV** at the ADC input with **Scale → Units: Absolute**. A full-scale tone reads ±32768 counts; the mV come from the ADC's calibration at the readout frequency (Setup → Board).
 - Each redraw is a single shot, like the scope's Sample mode: noise is not averaged down.
 - Frequencies up to 2.21 GHz show (half the sample rate); a 2 GHz carrier has only about 2.2 samples per cycle.

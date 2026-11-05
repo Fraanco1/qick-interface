@@ -587,3 +587,9 @@ def test_the_oscilloscope_is_listed_and_redraws_until_stop(client):
     fields = oscilloscope["params"]["properties"]
     assert fields["qubit_freq_mhz"]["shown_when"] == {"qubit_pulse": ["flat", "gaussian", "gaussian edges"]}
     assert fields["readout_freq_mhz"]["from_chip"] == "readout_freq_mhz"
+
+
+def test_only_the_oscilloscope_offers_a_horizontal_scale(client):
+    measurements = client.get("/api/measurements").json()
+
+    assert {k for k, m in measurements.items() if m["x_scale"]} == {"oscilloscope"}

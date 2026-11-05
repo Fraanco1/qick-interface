@@ -47,7 +47,8 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None, scope=None) -
                       "plots": m.plots, "marker_sets": m.marker_sets, "info_sets": m.info_sets,
                       "setup_sets": getattr(m, "setup_sets", {}), "setup_label": getattr(m, "setup_label", ""),
                       "sequence": hasattr(m, "sequence"), "run_key": getattr(m, "run_key", "Run sweep"),
-                      "setup_requires": getattr(m, "setup_requires", {})}
+                      "setup_requires": getattr(m, "setup_requires", {}),
+                      "x_scale": getattr(m, "x_scale", False)}
                 for key, m in MEASUREMENTS.items()}
 
     @app.get("/api/profiles")

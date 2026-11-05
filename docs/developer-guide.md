@@ -101,6 +101,7 @@ class MyMeasurement:
     marker_sets = "qubit_freq_mhz"                   # what "Marker → …" stores, or None
     info_sets = {}                                   # fit result name → chip parameter
     run_key = "Run sweep"                            # optional: the run key's label (default)
+    x_scale = False                                  # optional: True offers time/div and centre in Scale (Oscilloscope)
     # optional, per window: "views" lists other plots to show there (Scale → Show, per browser), the first being
     # the default, e.g. Rabi's raw I, Q, |S21|. A view with "iq": True draws traces [I, Q, fit I, fit Q] as Q
     # against I. Each view, like each plot, may carry its "absolute" version.
