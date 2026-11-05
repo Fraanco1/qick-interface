@@ -256,7 +256,10 @@ function markerMenu() {
 
 // ---- Scale: like the PNA-X Scale hardkey. Display only, so per browser, per measurement and window. ----
 // Manual: Scale per division, Reference level, and the division it sits on (Reference position, 0 = bottom).
-const scaleKey = (k) => `scale.${state.data?.measurement ?? state.measurement}.${plotDefs()[k]?.unit ?? ""}.${k}`;
+const scaleKey = (k) => {
+  const def = plotDefs()[k];  // a view other than the window's first keeps its own scale
+  return `scale.${state.data?.measurement ?? state.measurement}.${def?.unit ?? ""}.${k}${def?.view ? `.v${def.view}` : ""}`;
+};
 const scaleOf = (k) => store.get(scaleKey(k), { auto: true });
 
 function yRange(k, min, max) {
@@ -288,6 +291,16 @@ function scaleMenu() {
   return [...head, ...plotDefs().flatMap((def, k) => {
     const s = scaleOf(k), title = document.createElement("h3");
     title.className = "subhead"; title.textContent = `Tr${k + 1} ${def.title}`;
+    const views = windowViews(k), show = [];
+    if (views) {
+      const pick = document.createElement("select");
+      views.forEach((v, i) => pick.append(new Option(v.title, i)));
+      pick.value = def.view ?? 0;
+      pick.onchange = () => setView(k, Number(pick.value));
+      show.push(field("Show", pick));
+    }
+    if (def.iq) return [title, ...show, hint("Q against I, one point per sweep step, with the fit along the "
+      + "direction the points move. Autoscaled, with the same scale on I and Q.")];
     const mode = document.createElement("select");
     mode.append(new Option("On", "auto"), new Option("Off (fixed)", "fixed"));
     mode.value = s.auto ? "auto" : "fixed";
@@ -303,7 +316,7 @@ function scaleMenu() {
       };
       return input;
     };
-    return [title, field("Autoscale", mode),
+    return [title, ...show, field("Autoscale", mode),
       field("Scale", number("perDiv", (v) => v > 0), `${def.unit}/div`),
       field("Reference level", number("ref", Number.isFinite), def.unit, "Value at the reference line (▶)."),
       field("Reference position", number("pos", (v) => v >= 0 && v <= 10), "div", "0 = bottom, 10 = top."),
@@ -730,11 +743,25 @@ const COLORS = () => {
 
 // Units (Scale menu): relative (dB, a.u.) or absolute at the ADC (dBm, mV), from the board calibration.
 // A plot shows its absolute version when it has one and the data carries those traces (older runs may not).
+// Views (Scale → Show): a window may offer other traces, e.g. Rabi's raw I, Q, |S21| or the I/Q plane.
 function plotDefs(measurement = state.data?.measurement ?? state.measurement) {
-  const defs = state.measurements[measurement].plots;
-  if (store.get("units", "relative") !== "absolute") return defs;
   const has = (d) => !state.data || d.traces.every((t) => t in (state.data.traces ?? {}));
-  return defs.map((d) => (d.absolute && has(d.absolute) ? d.absolute : d));
+  const defs = state.measurements[measurement].plots.map((d, k) => {
+    if (!d.views) return d;
+    const i = store.get(`view.${measurement}.${k}`, 0);
+    return d.views[i] && has(d.views[i]) ? { ...d.views[i], view: i } : { ...d.views[0], view: 0 };
+  });
+  if (store.get("units", "relative") !== "absolute") return defs;
+  return defs.map((d) => (d.absolute && has(d.absolute) ? { ...d.absolute, view: d.view } : d));
+}
+
+const windowViews = (k) => state.measurements[state.data?.measurement ?? state.measurement].plots[k]?.views;
+
+function setView(k, i) {
+  store.set(`view.${state.data?.measurement ?? state.measurement}.${k}`, i);
+  state.plotsFor = null;  // rebuild: the trace count, and for the I/Q plane the plot kind, change
+  if (state.data) showUpdate(state.data); else { buildPlots(state.measurement); traceLines(); }
+  renderMenuBody();
 }
 
 function setUnits(units) {
@@ -751,7 +778,7 @@ function buildPlots(measurement) {
   plotDefs(measurement).forEach((def, k) => {
     const el = $(k === 0 ? "plot-mag" : "plot-phase");
     plots[k]?.destroy();
-    plots[k] = makePlot(el, COLORS()[k], def.traces.length, k);
+    plots[k] = def.iq ? new IqPlot(el, COLORS()[k]) : makePlot(el, COLORS()[k], def.traces.length, k);
   });
   plots.mag = plots[0]; plots.phase = plots[1];
 }
@@ -779,6 +806,86 @@ function makePlot(el, color, nTraces, k) {
     hooks: { draw: [(u) => drawMarker(u, color), (u) => drawReference(u, k, color)], setScale: [() => traceLines()], ready: [(u) => u.over.addEventListener("click", () => setMarker(u.cursor.idx))] },
   };
   return new uPlot(opts, [[], ...Array.from({ length: nTraces }, () => [])], el);
+}
+
+// The I/Q plane: Q against I, one dot per sweep point, the fit as a dashed line. Same scale on both axes,
+// so the direction the points move is drawn true. Offers what the page uses of a uPlot plot.
+class IqPlot {
+  constructor(el, color) {
+    this.el = el; this.color = color; this.data = [];
+    this.canvas = document.createElement("canvas");
+    this.canvas.style.display = "block";
+    this.canvas.addEventListener("click", (e) => setMarker(this.nearest(e)));
+    el.append(this.canvas);
+    this.setSize({ width: el.clientWidth, height: el.clientHeight });
+  }
+  destroy() { this.canvas.remove(); }
+  setSize({ width, height }) {
+    this.w = width; this.h = height;
+    this.canvas.width = width * devicePixelRatio; this.canvas.height = height * devicePixelRatio;
+    this.canvas.style.width = `${width}px`; this.canvas.style.height = `${height}px`;
+    this.redraw();
+  }
+  setData(data) { this.data = data; this.redraw(); }
+  // one step for both axes, a square grid; [x0, y0] is the data value at the plot's lower left
+  layout() {
+    const [, i, q, fi, fq] = this.data, box = { left: 56, top: 4, right: this.w - 8, bottom: this.h - 30 };
+    const all = (a, b) => [...(a ?? []), ...(b ?? [])].filter(Number.isFinite);
+    const xs = all(i, fi), ys = all(q, fq);
+    if (!xs.length || box.right <= box.left || box.bottom <= box.top) return null;
+    const lo = (v) => Math.min(...v), hi = (v) => Math.max(...v);
+    const bw = box.right - box.left, bh = box.bottom - box.top;
+    const span = Math.max((hi(xs) - lo(xs)) / bw, (hi(ys) - lo(ys)) / bh) * 1.1 || 1e-9;  // data per pixel
+    const step = niceDiv(span * Math.min(bw, bh));
+    const perPx = Math.max(span, step / (Math.min(bw, bh) / 10));
+    const cx = (lo(xs) + hi(xs)) / 2, cy = (lo(ys) + hi(ys)) / 2;
+    return { box, step, perPx, x0: cx - perPx * bw / 2, y0: cy - perPx * bh / 2 };
+  }
+  get scales() { const l = this.layout(); return { y: l ? { min: l.y0, max: l.y0 + 10 * l.step } : {} }; }
+  get div() { return this.layout()?.step; }
+  nearest(e) {
+    const l = this.layout(), [, i, q] = this.data;
+    if (!l) return null;
+    const r = this.canvas.getBoundingClientRect();
+    const x = l.x0 + (e.clientX - r.left - l.box.left) * l.perPx, y = l.y0 + (l.box.bottom - (e.clientY - r.top)) * l.perPx;
+    return argMin(i.map((v, k) => (v - x) ** 2 + (q[k] - y) ** 2));
+  }
+  redraw() {
+    const ctx = this.canvas.getContext("2d"), d = devicePixelRatio, l = this.layout();
+    ctx.setTransform(d, 0, 0, d, 0, 0);
+    ctx.clearRect(0, 0, this.w, this.h);
+    if (!l) return;
+    const { box, step, perPx, x0, y0 } = l, X = (v) => box.left + (v - x0) / perPx, Y = (v) => box.bottom - (v - y0) / perPx;
+    const font = "12px " + getComputedStyle(document.body).fontFamily, digits = decimalsFor(step);
+    ctx.save();
+    ctx.strokeStyle = "#3b4148"; ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+    ctx.fillStyle = "#9aa1aa"; ctx.font = font;
+    ctx.beginPath(); ctx.rect(box.left, box.top, box.right - box.left, box.bottom - box.top); ctx.clip();
+    for (let v = Math.ceil(x0 / step) * step; X(v) <= box.right; v += step) { ctx.moveTo(X(v), box.top); ctx.lineTo(X(v), box.bottom); }
+    for (let v = Math.ceil(y0 / step) * step; Y(v) >= box.top; v += step) { ctx.moveTo(box.left, Y(v)); ctx.lineTo(box.right, Y(v)); }
+    ctx.stroke(); ctx.setLineDash([]);
+    const [, i, q, fi, fq] = this.data;
+    if (fi?.some(Number.isFinite)) {
+      ctx.strokeStyle = "#ffffff"; ctx.setLineDash([6, 4]); ctx.beginPath();
+      fi.forEach((v, k) => (k ? ctx.lineTo(X(v), Y(fq[k])) : ctx.moveTo(X(v), Y(fq[k]))));
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+    ctx.fillStyle = this.color;
+    i.forEach((v, k) => { ctx.beginPath(); ctx.arc(X(v), Y(q[k]), 2.5, 0, 2 * Math.PI); ctx.fill(); });
+    if (state.marker !== null && i[state.marker] !== undefined) {
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.beginPath();
+      ctx.arc(X(i[state.marker]), Y(q[state.marker]), 6, 0, 2 * Math.PI); ctx.stroke();
+    }
+    ctx.restore();
+    ctx.fillStyle = "#9aa1aa"; ctx.font = font; ctx.textAlign = "center";
+    for (let v = Math.ceil(x0 / step) * step, n = 0; X(v) <= box.right; v += step, n++)
+      if (n % 2 === 0 && X(v) < box.right - 40) ctx.fillText(minus(v.toFixed(digits)), X(v), box.bottom + 16);  // clear of "I →"
+    ctx.textAlign = "right";
+    for (let v = Math.ceil(y0 / step) * step, n = 0; Y(v) >= box.top; v += step, n++)
+      if (n % 2 === 0) ctx.fillText(minus(v.toFixed(digits)), box.left - 6, Y(v) + 4);
+    ctx.textAlign = "left"; ctx.fillText("I →", box.right - 28, box.bottom + 16);
+    ctx.save(); ctx.translate(12, box.top + 24); ctx.fillText("Q ↑", 0, 0); ctx.restore();
+  }
 }
 
 function drawMarker(u, color) {
@@ -823,7 +930,8 @@ function renderMarkerReadout() {
   const fmt = (v, digits) => (v === null || v === undefined ? "—" : minus(v.toFixed(digits)));
   plotDefs().forEach((def, k) => {
     if (k) box.append("   ");
-    box.append(num(`${fmt(t[def.traces[0]][i], 2)}${def.unit === "°" ? "°" : " " + def.unit}`));
+    if (def.iq) box.append(num(`I ${fmt(t[def.traces[0]][i], 2)}, Q ${fmt(t[def.traces[1]][i], 2)} ${def.unit}`));
+    else box.append(num(`${fmt(t[def.traces[0]][i], 2)}${def.unit === "°" ? "°" : " " + def.unit}`));
   });
 }
 
@@ -854,6 +962,7 @@ function traceLines() {
     const line = $(k === 0 ? "tr1-line" : "tr2-line"), label = `Tr${k + 1} ${def.title}`;
     const s = plots[k]?.scales.y;
     if (!state.data || s?.min === undefined || s.min === null) { line.textContent = label; return; }
+    if (def.iq) { line.textContent = `${label}   ${+plots[k].div.toPrecision(3)} ${def.unit}/div on I and Q`; return; }
     const div = (s.max - s.min) / 10, sc = scaleOf(k), ref = sc.auto ? s.min + 5 * div : sc.ref;
     const refText = minus(String(+ref.toFixed(decimalsFor(div) + 1)));
     line.textContent = `${label}   ${+div.toPrecision(3)} ${def.unit}/div   Ref ${refText} ${def.unit}${sc.auto ? "" : "   Fixed"}`;

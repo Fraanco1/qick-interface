@@ -34,7 +34,7 @@ def test_amplitude_rabi_finds_the_pi_pulse_gain():
     last = list(Rabi.run(FakeBoard(SOCCFG, oscillating(0.4)), TRANSMON, params))[-1]
 
     assert last.info["π-pulse gain"] == pytest.approx(0.4, abs=0.005)
-    assert set(last.traces) == {"Signal", "Fit", "Phase (°)", "Signal (mV)", "Fit (mV)"}
+    assert {"Signal", "Fit", "Phase (°)", "Signal (mV)", "Fit (mV)"} <= set(last.traces)
     assert last.x_axis == {"title": "Qubit gain", "unit": ""}
 
 
@@ -217,3 +217,50 @@ def test_a_gaussian_longer_than_the_waveform_memory_is_refused_in_plain_words():
 
 def test_the_longest_envelope_that_fits_is_accepted():
     Rabi.sequence(SOCCFG, TRANSMON, RabiParams(**BASE, sweep="amplitude", sigma_us=1.66))
+
+
+def oscillating_along(angle_deg, seed, x_pi=0.4):
+    """A qubit driven to |1⟩ at x_pi, its readout moving along a line at angle_deg in the I/Q plane, with noise."""
+    rng = np.random.default_rng(seed)
+
+    def simulate(program):
+        x = Rabi.x_values(program)
+        excited = 0.5 - 0.5 * np.cos(np.pi * x / x_pi)
+        noise = rng.normal(0, 1, x.size) + 1j * rng.normal(0, 1, x.size)
+        return [200 + 30j + 60 * excited * np.exp(1j * np.radians(angle_deg)) + noise]
+    return simulate
+
+
+@pytest.mark.parametrize("angle", [0, 45, 135, 225, 300])
+def test_the_signal_rises_from_the_zero_drive_end_whatever_the_iq_direction(angle):
+    # without a rule, the eigensolver picks the sign, at random near a diagonal: Tr1 flipped between rounds
+    for seed in range(20):
+        params = RabiParams(**BASE, sweep="amplitude", start=0.0, stop=1.0)
+        last = list(Rabi.run(FakeBoard(SOCCFG, oscillating_along(angle, seed)), TRANSMON, params))[-1]
+
+        signal = last.traces["Signal"]
+        assert signal[0] < 0 < signal[np.argmin(np.abs(last.x - 0.4))], (angle, seed)  # |0⟩ low, π high
+
+
+def test_the_raw_i_q_and_magnitude_are_traces_too():
+    params = RabiParams(**BASE, sweep="amplitude", start=0.0, stop=1.0)
+    last = list(Rabi.run(FakeBoard(SOCCFG, oscillating_along(30, 0)), TRANSMON, params))[-1]
+
+    s21 = last.raw["s21"]
+    assert last.traces["I"] == pytest.approx(s21.real)
+    assert last.traces["Q"] == pytest.approx(s21.imag)
+    assert last.traces["|S21|"] == pytest.approx(np.abs(s21))
+    for name in ("I", "Q", "|S21|"):
+        assert f"{name} (mV)" in last.traces
+
+
+def test_the_fit_is_drawn_in_the_iq_plane_along_the_direction_the_points_move():
+    params = RabiParams(**BASE, sweep="amplitude", start=0.0, stop=1.0)
+    last = list(Rabi.run(FakeBoard(SOCCFG, oscillating_along(30, 0)), TRANSMON, params))[-1]
+
+    fit = last.traces["Fit I"] + 1j * last.traces["Fit Q"]
+    direction = np.angle(fit[np.argmax(last.traces["Fit"])] - fit[np.argmin(last.traces["Fit"])], deg=True)
+    assert direction == pytest.approx(30, abs=2)  # from |0⟩ toward |1⟩
+    noise_rms = np.sqrt(2) / params.readout_gain  # S21 is divided by the readout gain
+    assert np.sqrt(np.mean(np.abs(fit - last.raw["s21"]) ** 2)) < 1.2 * noise_rms  # through the points
+    assert "Fit I (mV)" in last.traces and "Fit Q (mV)" in last.traces

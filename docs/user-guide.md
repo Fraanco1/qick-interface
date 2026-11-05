@@ -161,7 +161,9 @@ Measurement: **Rabi**. Qubit and readout frequencies are filled in from steps 1 
 
 **Readout → Delay before readout** (default 0.05 µs) sets the wait from the end of the qubit pulse to the start of the readout pulse; 0 starts the readout right away. The board plays no pulse shorter than 3 cycles of its 1.63 ns clock: a flat pulse is at least 4.9 ns (start a length sweep at 0.005 µs), and a Gaussian, or a Gaussian edge, needs σ of at least 1.22 ns. A Gaussian is also stored in the DAC's 6.67 µs waveform memory, so its σ is at most 1.666 µs (Edge σ is capped at 0.5 µs). Lengths are rounded to whole cycles (1.63 ns); the x-axis shows the lengths actually played. Shorter values are refused with a message saying so.
 
-**Tr1** is the readout signal along the direction it moves in the I/Q plane, with a damped-cosine fit as a dashed white line. **Tr2** is the phase.
+**Tr1** is the readout **Signal**: the averaged readout moves along a straight line in the I/Q plane as the qubit is excited, and the app projects each point onto that line (the direction the points spread most). It is oriented so the signal rises from zero drive: |0⟩ low, the π pulse high. The damped-cosine fit is the dashed white line. **Tr2** is the phase. Why this projection, and what other software does: `docs/research/iq-projection.md`.
+
+**Scale → Show** switches what each window shows, without a new run: Tr1 can show the raw **I**, **Q** or **|S21|** instead of the Signal (the fit stays on the Signal), and Tr2 the **I/Q plane**: Q against I, one dot per sweep point, with the fit drawn along the line, on equal scales. Use it to check the projection: the dots should lie on a line, not a curve or a round cloud. Don't judge a Rabi by |S21|: read between the resonator's two frequencies it can swing at twice the Rabi frequency.
 
 When the fit explains the data, the screen shows the π-pulse (gain, or length in µs). For an amplitude sweep, **Marker → Store π-pulse gain** saves it. If there is no clear oscillation, no π-pulse is shown, rather than a meaningless number.
 
@@ -191,6 +193,7 @@ Where the pulses come out depends on the setup: with a **Control line**, the qub
 | Scale | Size of one division, e.g. 2 dB/div. |
 | Reference level | The value on the reference line, marked ▶ on the left edge. |
 | Reference position | Which division the reference line sits on: 0 = bottom, 10 = top, 5 = middle. |
+| Show | Only where a measurement offers other views of a window (Rabi: I, Q, \|S21\|, I/Q plane). Each view keeps its own scale. |
 
 Switching Autoscale off keeps the current view; **Autoscale once** fits the current data and stays fixed. The trace line above each window shows the scale, the reference value and **Fixed** when it is not autoscaling. Settings are kept in your browser, per measurement.
 

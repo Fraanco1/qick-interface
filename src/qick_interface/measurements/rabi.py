@@ -122,9 +122,18 @@ class Rabi:
     marker_sets = None
     drive_fields = {"qubit_gain": ("qubit_freq_mhz", "qubit", lambda p: "flat_top" if p("shape") == "gaussian edges" else "flat"), "scope_gain": ("qubit_freq_mhz", "qubit", "gauss"),
                     "readout_gain": ("readout_freq_mhz", "readout", "flat")}
-    plots = [{"title": "Signal", "unit": "a.u.", "traces": ["Signal", "Fit"],
-              "absolute": {"title": "Signal at the ADC", "unit": "mV", "traces": ["Signal (mV)", "Fit (mV)"]}},
-             {"title": "Phase", "unit": "°", "traces": ["Phase (°)"]}]
+    # each window's first view is the default; Scale → Show picks another (display only, per browser).
+    # Signal is what the fit uses; the raw views are for checking it (docs/research/iq-projection.md).
+    _signal = {"title": "Signal", "unit": "a.u.", "traces": ["Signal", "Fit"],
+               "absolute": {"title": "Signal at the ADC", "unit": "mV", "traces": ["Signal (mV)", "Fit (mV)"]}}
+    _raw = [{"title": name, "unit": "a.u.", "traces": [name],
+             "absolute": {"title": f"{name} at the ADC", "unit": "mV", "traces": [f"{name} (mV)"]}}
+            for name in ("I", "Q", "|S21|")]
+    _iq = {"title": "I/Q plane", "unit": "a.u.", "iq": True, "traces": ["I", "Q", "Fit I", "Fit Q"],
+           "absolute": {"title": "I/Q plane at the ADC", "unit": "mV", "iq": True,
+                        "traces": ["I (mV)", "Q (mV)", "Fit I (mV)", "Fit Q (mV)"]}}
+    _phase = {"title": "Phase", "unit": "°", "traces": ["Phase (°)"]}
+    plots = [{**_signal, "views": [_signal, *_raw]}, {**_phase, "views": [_phase, _iq]}]
     info_sets = {"π-pulse gain": "pi_gain"}  # fit result -> chip parameter it can be stored as
 
     @staticmethod
@@ -183,22 +192,33 @@ class Rabi:
 
         for i, iq in enumerate(board.run(program, params.rounds, should_stop), start=1):
             s21 = received_s21(iq, program, "readout", profile)
-            signal = _project(s21)
+            signal, centre, axis = _project(s21, x)
             fit, x_pi = _fit_damped_cosine(x, signal)
+            fit_iq = centre + fit * axis  # the fit drawn back in the I/Q plane, along the projection axis
             phase = np.degrees(np.angle(s21 * np.exp(-1j * np.angle(np.mean(s21)))))
             mv = lambda v: received_mv(v, program, "readout", profile, board.calibration)
-            yield Update(i, params.rounds, x, {"Signal": signal, "Fit": fit, "Phase (°)": phase,
-                                               "Signal (mV)": mv(signal), "Fit (mV)": mv(fit)},
+            traces = {"Signal": signal, "Fit": fit, "Phase (°)": phase,
+                      "I": s21.real, "Q": s21.imag, "|S21|": np.abs(s21), "Fit I": fit_iq.real, "Fit Q": fit_iq.imag}
+            traces |= {f"{name} (mV)": mv(traces[name]) for name in
+                       ("Signal", "Fit", "I", "Q", "|S21|", "Fit I", "Fit Q")}
+            yield Update(i, params.rounds, x, traces,
                          raw={"s21": s21}, x_axis=x_axis,
                          info={info_name: x_pi} if x_pi is not None else {})
 
 
-def _project(s21: np.ndarray) -> np.ndarray:
-    """I/Q points onto the direction they move along (largest variance), centred on their mean."""
-    z = s21 - s21.mean()
+def _project(s21: np.ndarray, x: np.ndarray) -> tuple[np.ndarray, complex, complex]:
+    """I/Q points onto the direction they move along (largest variance), centred on their mean: the averaged
+    readout moves along the line from the |0⟩ to the |1⟩ response (docs/research/iq-projection.md).
+    The eigensolver's sign is arbitrary, so the axis is turned to point away from the zero-drive end, as
+    Quantify does: the signal rises from |0⟩. Returns the signal, the centre and the axis (unit complex)."""
+    centre = s21.mean()
+    z = s21 - centre
     w, v = np.linalg.eigh(np.cov(np.vstack([z.real, z.imag])))
-    axis = v[:, np.argmax(w)]
-    return z.real * axis[0] + z.imag * axis[1]
+    axis = complex(*v[:, np.argmax(w)])
+    signal = z.real * axis.real + z.imag * axis.imag
+    if signal[np.argmin(np.abs(x))] > 0:
+        signal, axis = -signal, -axis
+    return signal, centre, axis
 
 
 def _damped_cosine(x, amp, freq, phase, offset, decay):
@@ -206,7 +226,7 @@ def _damped_cosine(x, amp, freq, phase, offset, decay):
 
 
 def _fit_damped_cosine(x, y):
-    """Best-fit curve and the x of the π pulse (half a Rabi period from the start).
+    """Best-fit curve and the x of the π pulse (half a Rabi period from zero drive, x = 0).
     The π pulse is None when the fit doesn't explain the data (R² < 0.8) or falls outside the sweep."""
     span = x[-1] - x[0]
     scale = np.std(y) or 1.0
@@ -218,7 +238,8 @@ def _fit_damped_cosine(x, y):
     for phase0 in (0.0, np.pi):
         try:
             # offset starts slightly off 0: the optimizer's step is relative and never leaves an exact 0
-            with warnings.catch_warnings():  # no decay in the data leaves the decay time undetermined
+            # no decay in the data leaves the decay time undetermined; trial decays may overflow exp
+            with warnings.catch_warnings(), np.errstate(over="ignore"):
                 warnings.simplefilter("ignore", OptimizeWarning)
                 p, _ = curve_fit(_damped_cosine, x, yn, maxfev=5000, p0=[1.4, f0, phase0, 0.01, 3 * span])
         except (RuntimeError, ValueError):
@@ -233,7 +254,7 @@ def _fit_damped_cosine(x, y):
     if amp < 0:
         amp, phase = -amp, phase + np.pi
     freq, phase = abs(freq), np.copysign(1, freq) * phase
-    k = np.round(phase / np.pi)  # the start of the sweep sits on an extremum of the cosine
+    k = np.round(phase / np.pi)  # zero drive (x = 0) sits on an extremum of the cosine
     x_pi = ((k + 1) * np.pi - phase) / (2 * np.pi * freq)
     r_squared = 1 - best[0] / np.sum(yn ** 2)
     if r_squared < 0.8 or not x[0] <= x_pi <= x[-1]:
