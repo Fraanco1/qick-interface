@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import uvicorn
 
-from .board import FakeBoard, QickBoard
+from .board import BOARD_HOST, FakeBoard, QickBoard
 from .fake_scope import FakeScope
 from .lo import CxgLo
 from .server import create_app
@@ -61,7 +61,7 @@ def simulated_chip(program):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fake", action="store_true", help="simulate the board (no hardware)")
-    parser.add_argument("--board", default="192.168.3.1", help="QICK Pyro4 nameserver address")
+    parser.add_argument("--board", default=BOARD_HOST, help="QICK Pyro4 nameserver address")
     parser.add_argument("--host", default="0.0.0.0", help="address to serve the page on")
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--data", type=Path, default=Path("data"))

@@ -378,7 +378,7 @@ Each `d[i]` is a `(n*nreads, 2)` int64 chunk of raw sums in shot order ([lib] qi
 import Pyro4
 from qick import QickConfig
 Pyro4.config.SERIALIZER = "pickle"; Pyro4.config.PICKLE_PROTOCOL_VERSION = 4
-ns = Pyro4.locateNS(host="192.168.3.1", port=8888)
+ns = Pyro4.locateNS(host="192.168.1.67", port=8888)
 soc = Pyro4.Proxy(ns.lookup("rfsoc"))
 soccfg = QickConfig(soc.get_cfg())
 # remote traceback for logs:  except Exception: log("".join(Pyro4.util.getPyroTraceback()))
@@ -393,9 +393,9 @@ This mirrors [gh] pyro4/02_client.ipynb cells 1–5. The proxy name `"rfsoc"` an
   - `start_src`, `stop_tproc`, `load_envelope`, `set_nyquist`, `load_bin_program`, `config_avg`/`config_buf`/`enable_buf`, `reload_mem`, `clear_tproc_counter`, `start_readout`/`poll_data` or `get_tproc_counter`/`get_decimated`/`get_accumulated` ([lib] qick_asm.py:1094–1128, 1273–1295, 2265–2366).
   - Envelopes and weights are sent as Python lists "for pyro compatibility" ([lib] qick_asm.py:1616–1634).
   - The binary program is a dict of lists ([lib] asm_v2.py:2167–2175). The board converts it back to numpy ([lib] qick.py:1768–1786).
-- **Server.** `start_server` sets `REQUIRE_EXPOSE=False` (all `QickSoc` methods are remote) and pickle-only. It registers `soc.streamer` and `soc.tproc` for autoproxying ([lib] pyro.py:54–94; qick.py:1036, 1065). It advertises the interface facing the nameserver, falling back to `iface='eth0'` only if that resolves to loopback ([lib] pyro.py:63–77). Our nameserver binds 192.168.3.1, so the USB-link address is used.
+- **Server.** `start_server` sets `REQUIRE_EXPOSE=False` (all `QickSoc` methods are remote) and pickle-only. It registers `soc.streamer` and `soc.tproc` for autoproxying ([lib] pyro.py:54–94; qick.py:1036, 1065). It advertises the interface facing the nameserver, falling back to `iface='eth0'` only if that resolves to loopback ([lib] pyro.py:63–77). Our nameserver binds 192.168.1.67, so the board's Ethernet address is used.
 - **Version check.** `QickConfig(cfg)` logs "QICK library version mismatch … usually KeyError in QickConfig initialization" when the board's `sw_version` differs from the local one ([lib] qick_asm.py:36–51). Board and PC are both 0.2.442.
-- **Security.** Pickle is the serializer, so anyone who can reach the daemon can execute code. This is acceptable only on the point-to-point USB link.
+- **Security.** Pickle is the serializer, so anyone who can reach the daemon can execute code. This is acceptable only on a network of trusted devices: ours is the instruments' wired network ([ADR 0001](../adr/0001-web-app-on-lab-pc-pyro4-to-board.md)).
 
 ### 6.3 Performance
 

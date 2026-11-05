@@ -149,7 +149,7 @@ Tests are written first (red, then green) and only at four agreed places:
   ```python
   import Pyro4; from qick import QickConfig
   Pyro4.config.SERIALIZER = "pickle"
-  soc = Pyro4.Proxy(Pyro4.locateNS(host="192.168.3.1", port=8888).lookup("rfsoc"))
+  soc = Pyro4.Proxy(Pyro4.locateNS(host="192.168.1.67", port=8888).lookup("rfsoc"))
   open("tests/fixtures/soccfg_rfsoc4x2.json", "w").write(QickConfig(soc.get_cfg()).dump_cfg())
   ```
 

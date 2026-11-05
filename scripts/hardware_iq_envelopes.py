@@ -11,7 +11,6 @@ This script changes the scope's settings.
 import time
 
 import numpy as np
-import Pyro4
 
 from qick_interface import iq_delay
 from qick_interface.board import QickBoard
@@ -19,7 +18,7 @@ from qick_interface.measurements.rabi import Rabi, RabiParams
 from qick_interface.profiles import SetupProfile
 
 board = QickBoard()
-scope = Pyro4.Proxy(Pyro4.locateNS(host="192.168.3.1", port=8888).lookup("scope"))
+scope = board.scope()
 iq = SetupProfile(chip="IQ", lo_mhz=None, output_path="iq", i_dac="DAC_A", q_dac="DAC_B", readout_adc="ADC_D")
 
 found = iq_delay.measure(board, scope, iq)
@@ -29,22 +28,34 @@ I_CH, Q_CH = found["i_channel"], found["q_channel"]
 for cmd in (f"SELECT:{I_CH} ON", f"SELECT:{Q_CH} ON", "SELECT:CH2 ON", f"{I_CH}:COUPLING DC", f"{Q_CH}:COUPLING DC",
             f"{I_CH}:POSITION 0", f"{Q_CH}:POSITION 0", f"{I_CH}:SCALE 0.05", f"{Q_CH}:SCALE 0.05",
             "CH2:SCALE 1.0", "CH2:POSITION -3", "HORIZONTAL:DELAY:MODE OFF", "HORIZONTAL:POSITION 10",
-            "ACQUIRE:MODE AVERAGE", "ACQUIRE:NUMAVG 64", "TRIGGER:A:TYPE EDGE", "TRIGGER:A:EDGE:SOURCE CH2",
+            "ACQUIRE:MODE SAMPLE", "TRIGGER:A:TYPE EDGE", "TRIGGER:A:EDGE:SOURCE CH2",
             "TRIGGER:A:EDGE:SLOPE RISE", "TRIGGER:A:LEVEL:CH2 0.9", "TRIGGER:A:MODE NORMAL", "HORIZONTAL:SCALE 1e-7"):
     scope.write(cmd)
 
 
-def capture():
-    scope.write("ACQUIRE:STOPAFTER SEQUENCE")
-    scope.write("ACQUIRE:STATE RUN")
-    t0 = time.time()
-    while scope.query("ACQUIRE:STATE?") != "0":
-        if time.time() - t0 > 20:
-            raise RuntimeError("no trigger")
-        time.sleep(0.1)
-    t, i = scope.waveform(I_CH)
-    _, q = scope.waveform(Q_CH)
-    return np.asarray(t), np.asarray(i), np.asarray(q)
+SHOTS = 8  # the MSO2024B never offers its own averaged waveform for reading (CURVE? times out), so: here
+WINDOW_S = (-0.05e-6, 0.7e-6)  # the qubit pulse: the record also holds the shot before, and the readout 1 µs later
+
+
+def capture(f_mhz):
+    """SHOTS single acquisitions, each triggered by PMOD0_0 at the start of the shot: the time axis, and I's
+    and Q's envelopes averaged over them. Envelopes, not waveforms: the carrier's phase differs from shot
+    to shot, and averaging the waveforms would partly cancel it."""
+    ei, eq = [], []
+    for _ in range(SHOTS):
+        scope.write("ACQUIRE:STOPAFTER SEQUENCE")
+        scope.write("ACQUIRE:STATE RUN")
+        t0 = time.time()
+        while scope.query("ACQUIRE:STATE?") != "0":
+            if time.time() - t0 > 20:
+                raise RuntimeError("no trigger")
+            time.sleep(0.1)
+        t, i = (np.asarray(x) for x in scope.waveform(I_CH))
+        q = np.asarray(scope.waveform(Q_CH)[1])
+        w = (t > WINDOW_S[0]) & (t < WINDOW_S[1])
+        ei.append(envelope(t[w], i[w], f_mhz))
+        eq.append(envelope(t[w], q[w], f_mhz))
+    return t[w], np.mean(ei, axis=0), np.mean(eq, axis=0)
 
 
 def envelope(t, v, f_mhz):
@@ -57,10 +68,12 @@ def envelope(t, v, f_mhz):
     return np.convolve(env, np.ones(n) / n, mode="same")
 
 
-def centre_ns(t, env):
-    """Centre of the envelope's top: weighted mean over where it is above half its peak."""
-    top = env > env.max() / 2
-    return np.sum(t[top] * env[top] ** 2) / np.sum(env[top] ** 2) * 1e9
+def lag_ns(t, a, b):
+    """How much later b is than a, from the cross-correlation of the whole envelopes (refined between samples)."""
+    c = np.correlate(b - b.mean(), a - a.mean(), "full")
+    k = np.argmax(c)
+    frac = (c[k - 1] - c[k + 1]) / (2 * (c[k - 1] - 2 * c[k] + c[k + 1]))
+    return (k - (a.size - 1) + frac) * (t[1] - t[0]) * 1e9
 
 
 def edges_ns(t, env):
@@ -84,13 +97,11 @@ try:
         for label, delay in (("no correction", 0.0), ("with the Q delay", found["iq_delay_ps"])):
             board.play(Rabi.sequence(board.soccfg, iq.model_copy(update={"iq_delay_ps": delay}), params))
             time.sleep(0.3)
-            t, i, q = capture()
-            window = t < 0.7e-6  # the qubit pulse; the readout pulse starts 1 µs after it
-            ei, eq = envelope(t[window], i[window], 50), envelope(t[window], q[window], 50)
-            ri, fi = edges_ns(t[window], ei)
-            rq, fq = edges_ns(t[window], eq)
+            t, ei, eq = capture(50)
+            ri, fi = edges_ns(t, ei)
+            rq, fq = edges_ns(t, eq)
             print(f"{name}, {label}: Q − I at the rising edge {rq - ri:+.2f} ns, at the falling edge {fq - fi:+.2f} ns, "
-                  f"centre {centre_ns(t[window], eq) - centre_ns(t[window], ei):+.2f} ns")
+                  f"whole envelope {lag_ns(t, ei, eq):+.2f} ns")
 finally:
     board.silence()
     scope.write("ACQUIRE:MODE SAMPLE")

@@ -13,7 +13,8 @@ lab PCs ──lab network──▶ lab PC: QICK Analyzer (:8080) ──USB link 
 | | |
 |---|---|
 | Board | Real Digital RFSoC 4x2, PYNQ image 2022_10_22, Python 3.10 |
-| Address | `192.168.3.1` on the USB link to the lab PC; `ssh xilinx@192.168.3.1` |
+| Address | `192.168.1.67` on the instruments' wired network (fixed, `board/eth0`), where the QICK service listens. The micro-USB link still gives `192.168.3.1` to a PC plugged into it, for SSH and installing: `ssh xilinx@192.168.3.1` |
+| Lab PC | Windows 10 PC `DESKTOP-F8DQ84A`: wired `192.168.1.2` (instruments' network, with the board), Wi-Fi `192.168.1.111` (where browsers reach the page: `http://192.168.1.111:8090`). The app runs there with `--port 8090`, since National Instruments' web server holds 8080; the Windows firewall rule "QICK Analyzer 8090" lets the local network in. The two networks share the 192.168.1.x numbers but are separate: from Wi-Fi the board is reached only through this PC. |
 | QICK library | 0.2.442, in `~/jupyter_notebooks/qick` (must match the PC; see below) |
 | Firmware | `~/jupyter_notebooks/qick_firmware/qick_4x2.bit` (custom build, 2025-12-09, tProc v2). **Not** the `qick_4x2.bit` bundled with the QICK library, which lacks the dynamic readouts the app needs. |
 | Internet | None. Anything to install is downloaded on the PC and copied over. |
@@ -152,15 +153,16 @@ The app reaches QICK through a Pyro4 server on the board. `board/` in this repo 
 
 | File | Role |
 |---|---|
-| `qick_service.py` | Starts the Pyro4 nameserver on 192.168.3.1:8888, waits until it answers, then loads the firmware and publishes the board as `rfsoc`. |
+| `qick_service.py` | Starts the Pyro4 nameserver on 192.168.1.67:8888, waits until it answers, then loads the firmware and publishes the board as `rfsoc`. |
 | `converters.py` | RF data converter settings QICK does not expose, published as `converters`: each DAC's coarse delay. (Setting it did not move the output on our firmware; kept for further tests.) |
 | `scope.py` | The oscilloscope on the board's USB port (Tektronix MSO2024B), published next to the board as `scope` (`query`, `write`, `waveform`). Opened on first use; the service starts without it. |
 | `qick-pyro.service` | systemd unit: starts at boot after the network is up; restarts on failure, at most 5 times in 5 minutes. |
-| `install.sh` | Installs Pyro4 and the scope packages (pyusb, pyvisa, pyvisa-py) from local wheels, installs and starts the unit. |
+| `eth0` | The board's Ethernet setup: fixed `192.168.1.67/24` (the wired network has no DHCP server), plus PYNQ's fallback `192.168.2.99`. |
+| `install.sh` | Installs Pyro4 and the scope packages (pyusb, pyvisa, pyvisa-py) from local wheels and the Ethernet setup (keeping the original as `eth0.orig`), then installs and starts the unit. |
 
 ### Installing (or reinstalling)
 
-On the lab PC, from the repo:
+From a PC plugged into the board's micro-USB port, from the repo:
 
 ```bash
 python3 -m pip download --only-binary=:all: --python-version 3.10 --platform any -d board/wheels Pyro4 pyusb pyvisa pyvisa-py
@@ -195,7 +197,7 @@ Measured on the bench (2026-11-04):
 - The qubit pulse on DAC_A starts **76 ns after** the PMOD0_0 rising edge (cables included); trigger on PMOD and expect that offset.
 - PMOD0_0 swings 0 to 3.4 V. Into the scope's 1 MΩ input it rises in about 86 ns but falls in 8 ns and then rings for about 100 ns (down to −1.8 V, back up to +0.8 V): the line is unterminated. Measure its width between 50% points.
 - Keep scope tones at 50–100 MHz to see the carrier; above about 150 MHz only the envelope is reliable.
-- **DAC_B runs ahead of DAC_A** by a delay set at every power-up: 1.55 ns on one, 3.30 ns on the next; service restarts kept it. DAC_A and DAC_B are on different converter tiles, and the firmware has no multi-tile synchronization ([research](research/dac-tile-sync.md)). The setup's **Q delay** corrects it, in the carrier phase and in the pulse envelopes (whole cycles on the pulse start, the remaining fraction inside Gaussian envelopes); measure it after each power-up (user guide, "I/Q calibration"). With it, Q−I stays within ±0.6° from 20 to 150 MHz (was 111° to 266°).
+- **DAC_B runs ahead of DAC_A** by a delay set at every power-up: 1.55 ns on one, 3.30 ns on the next; service restarts kept it. DAC_A and DAC_B are on different converter tiles, and the firmware has no multi-tile synchronization ([research](research/dac-tile-sync.md)). The setup's **Q delay** corrects it, in the carrier phase and in the pulse envelopes (whole cycles on the pulse start, the remaining fraction inside Gaussian envelopes); measure it after each power-up (user guide, "I/Q calibration"). With it, Q−I stays within ±0.6° from 20 to 150 MHz (was 111° to 266°). On the scope (`scripts/hardware_iq_envelopes.py`, Q delay 3.11 ns), the envelopes of a Gaussian and of a Gaussian-edges pulse go from Q 3.0–3.2 ns ahead to within 0.1 ns of I, on both edges.
 - **Power scales** (`power.py`, user guide "Units"): the bench loopback DAC_B → ADC_D reads 2.4 dB (100 MHz) to 8 dB (2.1 GHz) less than the data sheets predict; with the DAC at its data-sheet value, ADC_D's full scale is +5.6 dBm at 150 MHz rising to +9.3 dBm at 1.95 GHz. The ~1 m loopback cable adds a ±0.7 dB ripple with a 100 MHz period (a standing wave between the ports); sweeps repeat to 0.001 dB.
 - The scope handles one request at a time; a capture for the Q delay triggers on the mains (`LINE`), which always fires.
 
@@ -205,19 +207,44 @@ While the service runs, it holds the FPGA. Jupyter notebooks on the board must n
 
 ### Security
 
-QICK's Pyro4 server runs as root and accepts Python pickle, so anyone who can reach port 8888 can run code on the board. That is acceptable only because the board sits on a point-to-point USB link to the lab PC. **Never bridge that link to the lab network.** ([ADR 0001](adr/0001-web-app-on-lab-pc-pyro4-to-board.md))
+QICK's Pyro4 server runs as root and accepts Python pickle, so anyone who can reach port 8888 can run code on the board. That is acceptable only because the instruments' wired network holds just the lab PC, the lab instruments and its gateway. **Never bridge it to the Wi-Fi or the institute network**; if other devices join it, add a firewall on the board that accepts only the lab PC. ([ADR 0001](adr/0001-web-app-on-lab-pc-pyro4-to-board.md))
 
 ### QICK versions
 
 The PC compiles the QICK programs and the board runs them, so both must have the same QICK version (0.2.442). The app refuses to start on a mismatch. To upgrade, change both: the board's `~/jupyter_notebooks/qick` checkout, and the `qick==` pin in `pyproject.toml`.
+
+## The app on the Windows lab PC
+
+The app runs on the Windows PC, from `C:\Users\franco\qick-interface` (Python 3.12 virtual environment in `.venv`), as the scheduled task **QICK Analyzer**:
+
+- It starts at boot, before anyone logs in, as the SYSTEM account, and runs `scripts\windows\run_server.cmd`.
+- That script starts the app on port 8090 and starts it again 10 s after it stops, so a board that was off at boot is picked up once it is on.
+- Output goes to `data\server.log`.
+
+To install it (once, in an administrator PowerShell, from the repo):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\windows\install_task.ps1
+Start-ScheduledTask "QICK Analyzer"
+```
+
+Everyday commands (PowerShell, or over `ssh franco@192.168.1.111`):
+
+```powershell
+Get-ScheduledTask "QICK Analyzer"                 # Running?
+Get-Content data\server.log -Tail 30              # its log
+Stop-ScheduledTask "QICK Analyzer"; Start-ScheduledTask "QICK Analyzer"   # restart, e.g. after updating the code
+```
+
+Browsers reach it at `http://192.168.1.111:8090`. Machines that use the CNEA proxy must bypass it for `192.168.1.111` (the proxy answers 403).
 
 ## Troubleshooting
 
 | Symptom | Cause and fix |
 |---|---|
 | App fails with `NamingError: unknown name: rfsoc` | The service is starting (loading the firmware takes about 15–30 s) or failing. Wait, then check `journalctl -u qick-pyro -n 50`. |
-| App fails with `Failed to locate the nameserver` | The board is off, the USB link is down, or the service is stopped. `ping 192.168.3.1`, then `systemctl status qick-pyro`. |
-| Service log: `nameserver could not start on 192.168.3.1:8888` | The USB link address is missing (link down) or the port is taken by an old process. Check `ip addr` on the board; restart the service. |
+| App fails with `Failed to locate the nameserver` | The board is off, its Ethernet is unplugged, or the service is stopped. From the lab PC `ping 192.168.1.67`, then on the board `systemctl status qick-pyro`. |
+| Service log: `nameserver could not start on 192.168.1.67:8888` | eth0 lacks that address (cable out, or `/etc/network/interfaces.d/eth0` changed) or the port is taken by an old process. Check `ip addr` on the board; restart the service. |
 | Service is `failed` after 5 attempts | Read the log for the cause, fix it, then `reset-failed` and `start` (above). |
 | `QICK version mismatch` | See [QICK versions](#qick-versions). |
 | A notebook on the board broke when the app started | Both loaded the firmware; see [The service owns the board](#the-service-owns-the-board). |

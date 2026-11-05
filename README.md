@@ -20,7 +20,7 @@ MKID arrays are read with Mazin Lab's MKIDGen3 instead; see [ADR 0004](docs/adr/
 
 ## Quick start
 
-On the lab PC connected to the board (USB link, board at `192.168.3.1`):
+On the lab PC wired to the board (the Windows PC `192.168.1.111`/`192.168.1.2`; board at `192.168.1.67` on the instruments' wired network):
 
 ```bash
 python3 -m venv .venv
@@ -29,6 +29,8 @@ python3 -m venv .venv
 .venv/bin/python -m qick_interface --fake   # simulated chip, no hardware needed
 ```
 
+On Windows the same, with `py -3.12 -m venv .venv` and `.venv\Scripts\python.exe` in place of `.venv/bin/python`.
+
 Then open `http://<lab-PC-address>:8080` from any computer in the lab.
 
 The board must be running the QICK Pyro4 service; see [hardware setup](docs/hardware-setup.md).
@@ -36,7 +38,7 @@ The board must be running the QICK Pyro4 service; see [hardware setup](docs/hard
 | Option | Default | Meaning |
 |---|---|---|
 | `--fake` | off | Simulate the board: a resonator, a qubit and Rabi oscillations |
-| `--board` | `192.168.3.1` | Address of the board's Pyro4 nameserver |
+| `--board` | `192.168.1.67` | Address of the board's Pyro4 nameserver |
 | `--host` | `0.0.0.0` | Address the page is served on (`0.0.0.0` = all interfaces) |
 | `--port` | `8080` | Port the page is served on |
 | `--data` | `data` | Folder where runs are saved |

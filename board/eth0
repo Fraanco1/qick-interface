@@ -1,0 +1,12 @@
+# The board's Ethernet, installed by install.sh as /etc/network/interfaces.d/eth0.
+# A fixed address on the instruments' wired network: it has no DHCP server.
+auto eth0
+iface eth0 inet static
+    address 192.168.1.67
+    netmask 255.255.255.0
+
+# PYNQ's own fallback address, kept as it was
+auto eth0:1
+iface eth0:1 inet static
+    address 192.168.2.99
+    netmask 255.255.255.0

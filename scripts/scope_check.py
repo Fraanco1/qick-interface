@@ -14,7 +14,6 @@ import sys
 import time
 
 import numpy as np
-import Pyro4
 
 from qick_interface.board import QickBoard
 from qick_interface.measurements.rabi import Rabi, RabiParams
@@ -22,7 +21,7 @@ from qick_interface.measurements.two_tone import TwoTone, TwoToneParams
 from qick_interface.profiles import SetupProfile
 
 board = QickBoard()
-scope = Pyro4.Proxy(Pyro4.locateNS(host="192.168.3.1", port=8888).lookup("scope"))
+scope = board.scope()
 print(scope.query("*IDN?"))
 profile = SetupProfile(chip="Scope check", lo_mhz=None, readout_dac="DAC_B", readout_adc="ADC_D",
                        control_dac="DAC_A", time_of_flight_us=0.292)

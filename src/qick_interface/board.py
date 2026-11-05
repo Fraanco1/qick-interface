@@ -16,6 +16,8 @@ from qick import QickConfig
 
 from .power import BoardCalibration
 
+BOARD_HOST = "192.168.1.67"  # the board on the instruments' wired network (board/eth0)
+
 
 class FakeBoard:
     """Simulated board: `simulate(program)` returns one complex array per readout."""
@@ -58,7 +60,7 @@ class QickBoard:
     CALL_TIMEOUT_S = 30  # a stuck board raises instead of hanging the app
     STALL_S = 30         # no data for this long during a round: give up with an error
 
-    def __init__(self, host: str = "192.168.3.1", port: int = 8888, name: str = "rfsoc"):
+    def __init__(self, host: str = BOARD_HOST, port: int = 8888, name: str = "rfsoc"):
         Pyro4.config.SERIALIZER = "pickle"
         Pyro4.config.PICKLE_PROTOCOL_VERSION = 4
         self._ns = Pyro4.locateNS(host=host, port=port)

@@ -1,5 +1,6 @@
 #!/bin/bash
-# Installs Pyro4 and the oscilloscope packages (offline) and the QICK Pyro4 service on the board. Run on the board with sudo.
+# Installs Pyro4 and the oscilloscope packages (offline), the board's fixed Ethernet address (board/eth0) and the
+# QICK Pyro4 service on the board. Run on the board with sudo.
 #
 # The board has no internet, so first download the wheels on the lab PC and copy this folder over:
 #   python3 -m pip download --only-binary=:all: --python-version 3.10 --platform any -d board/wheels \
@@ -17,6 +18,13 @@ if [ ${#wheels[@]} -eq 0 ]; then
     exit 1
 fi
 /usr/local/share/pynq-venv/bin/pip install --no-index "${wheels[@]}"
+
+# the fixed Ethernet address the service listens on; the original file is kept once, next to this script
+[ -e "$HERE/eth0.orig" ] || cp /etc/network/interfaces.d/eth0 "$HERE/eth0.orig"
+install -m 644 "$HERE/eth0" /etc/network/interfaces.d/eth0
+ifdown eth0:1 eth0 2>/dev/null || true
+ifup eth0 eth0:1
+ip -4 -br addr show eth0
 
 sed "s|@DIR@|$HERE|" "$HERE/qick-pyro.service" > /etc/systemd/system/qick-pyro.service
 systemctl daemon-reload

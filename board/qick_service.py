@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Runs on the RFSoC: starts a Pyro4 nameserver and exposes QickSoc, the RF data converter settings and the oscilloscope to the lab PC.
+"""Runs on the RFSoC: starts a Pyro4 nameserver and exposes QickSoc, the RF data converter settings and the oscilloscope to the lab PC (over Ethernet).
 
 Installed as a systemd service by board/install.sh. Must run as root inside the
 PYNQ environment (`source /etc/profile`).
@@ -15,7 +15,7 @@ from qick.pyro import start_nameserver
 from converters import Converters  # board/converters.py, next to this file
 
 BITFILE = "/home/xilinx/jupyter_notebooks/qick_firmware/qick_4x2.bit"
-HOST = "192.168.3.1"  # board address on the USB link to the lab PC
+HOST = "192.168.1.67"  # board address on the instruments' wired network (board/eth0)
 NS_PORT = 8888
 PROXY_NAME = "rfsoc"
 
@@ -24,9 +24,9 @@ Pyro4.config.SERIALIZER = "pickle"
 Pyro4.config.PICKLE_PROTOCOL_VERSION = 4
 ns_thread = threading.Thread(target=start_nameserver, args=(HOST, NS_PORT), daemon=True)
 ns_thread.start()
-for _ in range(30):  # the USB link address may appear a little after boot
+for _ in range(30):  # the Ethernet address may appear a little after boot
     if not ns_thread.is_alive():
-        sys.exit(f"Pyro4 nameserver could not start on {HOST}:{NS_PORT}; is the USB link up?")
+        sys.exit(f"Pyro4 nameserver could not start on {HOST}:{NS_PORT}; is eth0 up with that address?")
     try:
         Pyro4.locateNS(host=HOST, port=NS_PORT)
         break
