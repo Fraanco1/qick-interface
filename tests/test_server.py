@@ -390,12 +390,12 @@ def test_only_pulsed_qubit_measurements_offer_a_scope_sequence(client):
     assert measurements["rabi"]["params"]["properties"]["scope_gain"]["group"] == "Output"
 
 
-def test_cw_time_runs_with_a_run_key_and_the_others_with_run_sweep(client):
+def test_cw_time_and_the_oscilloscope_run_with_a_run_key_and_the_others_with_run_sweep(client):
     measurements = client.get("/api/measurements").json()
 
     assert {k: m["run_key"] for k, m in measurements.items()} == {
         "resonator_sweep": "Run sweep", "cw_time": "Run", "two_tone": "Run sweep", "rabi": "Run sweep",
-        "rx_iq_cal": "Run sweep"}
+        "rx_iq_cal": "Run sweep", "oscilloscope": "Run"}
 
 
 def test_rx_calibration_is_offered_only_for_an_iq_return_path(client):
@@ -578,3 +578,12 @@ def test_gaussian_edges_drive_6_db_below_a_flat_pulse_at_the_same_gain(client):
 
     assert dbm(qubit_gain_hint("flat")) - dbm(qubit_gain_hint("gaussian edges")) == pytest.approx(6.02, abs=0.1)  # hints have one decimal
     assert "peak" not in qubit_gain_hint("gaussian edges")  # the flat part is the level
+
+
+def test_the_oscilloscope_is_listed_and_redraws_until_stop(client):
+    oscilloscope = client.get("/api/measurements").json()["oscilloscope"]
+
+    assert oscilloscope["name"] == "Oscilloscope" and oscilloscope["run_key"] == "Run"
+    fields = oscilloscope["params"]["properties"]
+    assert fields["qubit_freq_mhz"]["shown_when"] == {"qubit_pulse": ["flat", "gaussian", "gaussian edges"]}
+    assert fields["readout_freq_mhz"]["from_chip"] == "readout_freq_mhz"

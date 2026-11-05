@@ -133,6 +133,24 @@ Measurement: **CW Time**. Like the PNA-X sweep type of the same name: the tone s
 - Points within a sweep are exactly spaced by the board's clock. Between sweeps there is a short gap while the data travels to the PC, as on a PNA-X. Below about 2 µs per window the board measures faster than the USB link carries the data (16 bytes per window, about 8–11 MB/s), so that gap grows; the time axis within each sweep stays correct.
 - The status bar counts **Sweep n**. When you press **Stop**, every sweep of the run is saved: `s21` has one row per sweep, and `sweep_end_unix_s` gives the time each sweep reached the PC. A long run uses about 16 bytes per point per sweep of memory on the lab PC until it is saved.
 
+### Oscilloscope: the voltage at the ADCs
+
+Measurement: **Oscilloscope**. A two-channel scope on the board's ADC inputs: voltage against time, the carrier itself, not downconverted. It plays one shot and records the ADC's raw samples at 4.42 GS/s for 1.85 µs (8192 samples, a fixed limit of the board's recording buffer), then plays the next shot and redraws, until **Stop**. Use it to see what comes back from the chip: the readout pulse arriving, its level against the ADC's range, ringing, reflections.
+
+| Menu | Settings |
+|---|---|
+| Channels | **Channel 1**: the setup's readout input (the I input on an I/Q return), or any ADC. **Channel 2**: off, or another ADC; recorded on the next, identical shot, so both share the time axis. **Record start**: when the 1.85 µs record begins, from the start of the shot (like the scope's horizontal position) |
+| Readout | Readout frequency (from the chip parameters), gain, pulse length |
+| Qubit | **Qubit pulse**: none (default), flat (as in two-tone), Gaussian or Gaussian edges (as in Rabi); then its frequency, gain, length or σ, and the delay before readout |
+
+- Each window shows ADC counts, or **mV** at the ADC input with **Scale → Units: Absolute**. A full-scale tone reads ±32768 counts; the mV come from the ADC's calibration at the readout frequency (Setup → Board).
+- Each redraw is a single shot, like the scope's Sample mode: noise is not averaged down.
+- Frequencies up to 2.21 GHz show (half the sample rate); a 2 GHz carrier has only about 2.2 samples per cycle.
+- PMOD0_0 goes high when each record starts, so the lab scope can trigger on it too.
+- Pulses show about 0.13 µs earlier than the **Time of flight** in Setup: that one is measured after the readout's downconversion, which adds its own delay.
+
+Checked on the bench (2026-11-05) against the lab scope, with the same 50 MHz pulse played on both DACs: DAC_A on the scope, DAC_B through the loopback into ADC_C. Both show the same 0.5 µs pulse at 50.0 MHz, with the same overshoot on the first cycle and the same short tail after it. The scope read 221 mV (its 1 MΩ input, unterminated), the Oscilloscope 137 mV into the ADC's 50 Ω.
+
 ### 2. Two-tone spectroscopy
 
 Measurement: **Two-tone spectroscopy**. **Readout → Readout frequency** is already filled in from step 1 ("From the chip parameters").

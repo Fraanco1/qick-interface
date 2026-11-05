@@ -8,6 +8,7 @@ It measures transmon and fluxonium chips:
 
 - **Resonator sweep:** |S21| and phase of the readout resonator, pulsed or CW (tone always on, like a PNA-X), with the cable delay removed.
 - **CW Time:** |S21| and phase against time at one frequency, redrawn sweep after sweep until Stop, like the PNA-X sweep type of the same name.
+- **Oscilloscope:** a two-channel scope on the ADC inputs: raw voltage against time at 4.42 GS/s over 1.85 µs, one shot per redraw, while the readout pulse (optionally after a qubit pulse) plays.
 - **Two-tone spectroscopy:** sweep a qubit tone while reading out at the resonator.
 - **Rabi:** sweep the qubit pulse amplitude (Gaussian) or length (flat, or with Gaussian edges), with a fitted π-pulse.
 - **I/Q return path:** an I/Q mixer into two ADCs, combined in software to reject the image band, with an automatic **RX I/Q calibration** (gain, phase, delay).

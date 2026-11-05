@@ -31,6 +31,11 @@ class FakeBoard:
         """The window's samples, averaged over the shots: one complex array per readout."""
         return self._simulate(program)
 
+    def capture_raw(self, program, ro: int) -> np.ndarray:
+        """One shot's raw ADC samples from readout ro (see QickBoard.capture_raw)."""
+        time.sleep(self._round_time_s)
+        return np.asarray(self._simulate(program)[0], dtype=float)
+
     def play(self, program) -> None:
         self.playing = program
 
@@ -100,6 +105,20 @@ class QickBoard:
             data = program.acquire_decimated(self._soc, rounds=program.cfg.get("rounds", 1), progress=False)
             # with several shots per round QICK returns each shot: (shots, samples, I/Q)
             return [np.asarray(d).reshape(-1, *np.shape(d)[-2:]).mean(axis=0).dot([1, 1j]) for d in data]
+        except BaseException:
+            self._abort()
+            raise
+        finally:
+            self._quietly(self._soc.reset_gens)
+
+    def capture_raw(self, program, ro: int) -> np.ndarray:
+        """One shot's raw ADC samples from readout ro, at the ADC's full rate, recorded by the multi-rate
+        buffer (soccfg["mr_buf"]: 8192 samples) from the program's trigger(mr=True). The readout must pass its
+        input through unchanged (add_readoutconfig(..., outsel="input")). Real samples, in ADC counts."""
+        try:
+            self._soc.arm_mr(ro)
+            program.run(self._soc)
+            return np.asarray(self._soc.get_mr())[:, 0].astype(float)
         except BaseException:
             self._abort()
             raise

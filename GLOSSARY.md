@@ -96,6 +96,10 @@ _Avoid_: VNA sweep, spectroscopy (alone), S21 scan
 A measurement of S21 against time at one fixed readout tone frequency, repeated sweep after sweep until stopped; named after the PNA-X sweep type.
 _Avoid_: time trace, stream, monitor
 
+**Oscilloscope** (the measurement):
+A measurement showing the raw voltage at one or two ADC inputs against time, one shot per redraw, until stopped. Not the lab's oscilloscope (the Tektronix on the board's USB), which shows the DAC outputs; say "the scope" for that one.
+_Avoid_: ADC trace, raw capture
+
 **Sweep** (in CW Time):
 One pass of CW Time over its points; the screen redraws on each sweep, and the run saves every one.
 _Avoid_: round (a round is one pass of averaging in the other measurements), frame

@@ -137,8 +137,9 @@ function renderMenuBody() {
   else if (state.menu === "Scale") body.replaceChildren(...scaleMenu());
   else {
     const saved = store.get(paramsKey(), {});
+    // shown_when: {field: value} or {field: [values]}
     const applies = (p) => Object.entries(p.shown_when ?? {}).every(([key, value]) =>
-      paramValue(key, state.schema.properties[key], saved).value === value);
+      [value].flat().includes(paramValue(key, state.schema.properties[key], saved).value));
     const fields = Object.entries(state.schema.properties).filter(([, p]) => p.group === state.menu && applies(p));
     body.replaceChildren(...fields.map(([key, p]) => paramField(key, p)));
     if (state.menu === "Output" && state.measurements[state.measurement].sequence) body.append(...sequenceKeys());

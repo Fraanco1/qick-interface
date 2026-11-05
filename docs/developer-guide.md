@@ -50,7 +50,7 @@ A pydantic model. Each field's `json_schema_extra` tells the page how to show it
 | `group` | The soft-key menu the field appears in (e.g. "Sweep", "Readout"). |
 | `unit` | Shown next to the input. |
 | `from_chip` | The chip parameter that pre-fills the field (e.g. `"readout_freq_mhz"`). |
-| `shown_when` | Show the field only while other fields have these values, e.g. `{"mode": "pulsed"}`. |
+| `shown_when` | Show the field only while other fields have these values, e.g. `{"mode": "pulsed"}`; a list allows several, e.g. `{"qubit_pulse": ["flat", "gaussian"]}`. |
 
 Use `title` for the label and `description` for a hint under the field. `ge`/`le`/`gt` limits are checked by the server, and a violation comes back to the page as a readable error. A `Literal[...]` field becomes a drop-down. `two_tone.py` and `rabi.py` define a small `_f()` helper that builds these fields.
 
@@ -139,7 +139,7 @@ Tests are written first (red, then green) and only at four agreed places:
 | Where | File | Catches | Misses |
 |---|---|---|---|
 | Frequency planning | `tests/test_frequency.py` | wiring and sideband mistakes, out-of-range IFs | QICK's frequency rounding |
-| Measurements on `FakeBoard` | `tests/test_resonator_sweep.py`, `test_cw_time.py`, `test_two_tone.py`, `test_rabi.py`, `test_iq_return.py`, `test_iq_output.py`, `test_iq_delay.py`, `test_power.py`, `test_time_of_flight.py` | the program compiles for this firmware, axes, processing, fits | real timing, Pyro4 |
+| Measurements on `FakeBoard` | `tests/test_resonator_sweep.py`, `test_cw_time.py`, `test_two_tone.py`, `test_rabi.py`, `test_iq_return.py`, `test_iq_output.py`, `test_iq_delay.py`, `test_power.py`, `test_time_of_flight.py`, `test_oscilloscope.py` | the program compiles for this firmware, axes, processing, fits | real timing, Pyro4 |
 | Server | `tests/test_server.py` (with `tests/fake_cxg.py`, a stand-in CXG on localhost) | controller rules, schemas, live updates, saving, tone | how the page looks |
 | Real board | `scripts/hardware_sweep.py`, `scripts/hardware_two_readouts.py`, `scripts/scope_check.py`, `scripts/hardware_iq_loop.py`, `scripts/hardware_iq_envelopes.py` (manual) | the whole chain on hardware; `scope_check.py [channel of DAC_A]` measures on the oscilloscope the qubit pulses on a control line and, transmon-like, the qubit pulse, delay and readout pulse on one DAC (lengths, carriers, gain, Gaussian width, Gaussian edges, readout timing, PMOD marker, shot period; about 1 min) | — |
 

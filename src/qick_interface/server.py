@@ -19,6 +19,7 @@ from .measurements.cw_time import CwTime
 from .measurements.resonator_sweep import ResonatorSweep
 from .measurements.rabi import Rabi
 from .measurements.rx_iq_cal import RxIqCal
+from .measurements.oscilloscope import Oscilloscope
 from .measurements.two_tone import TwoTone
 from .profiles import (ChipParameters, SetupProfile, delete_profile, load_parameters, load_profiles, save_profile,
                        update_parameters)
@@ -26,7 +27,7 @@ from .session import Busy, NotController, Session
 
 STATIC = Path(__file__).parent / "static"
 MEASUREMENTS = {"resonator_sweep": ResonatorSweep, "cw_time": CwTime, "two_tone": TwoTone, "rabi": Rabi,
-                "rx_iq_cal": RxIqCal}
+                "rx_iq_cal": RxIqCal, "oscilloscope": Oscilloscope}
 
 
 class RunRequest(BaseModel):
