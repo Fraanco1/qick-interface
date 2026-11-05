@@ -108,6 +108,29 @@ The phase spread between runs must be well under 1°. The delay it prints is the
 
 The readouts are locked, and unlike the DACs (see "The oscilloscope" below) their relation does not change at power-up. So the RX I/Q calibration should stay valid across power-ups; confirm it once with the real mixer.
 
+**The whole I/Q chain without mixers.** The I/Q output's two DACs cabled straight into the I/Q return's two ADCs act as an ideal I/Q mixer pair at the IF:
+
+```
+DAC_A (I) ──▶ ADC_D (I)        DAC_B (Q) ──▶ ADC_C (Q)        (equal cables, no LO)
+```
+
+```bash
+.venv/bin/python scripts/hardware_iq_loop.py            # 5 calibration runs, then the image rejection
+.venv/bin/python scripts/hardware_iq_loop.py 5 ADC_B    # another ADC for I
+```
+
+It runs the RX I/Q calibration several times over 100–1500 MHz, then applies it and measures the image rejection reached. **Measured 2026-11-05:**
+
+| I input | Q/I gain | Q phase | I/Q delay | Image rejection (median, worst) |
+|---|---|---|---|---|
+| ADC_D | 0.991 | 178.40° | 3073 ps | 39–43 dB, 36 dB |
+| ADC_B | 2.007 | 89.41° | 3067 ps | 38–45 dB, 33 dB |
+
+- Every value repeats between runs (gain 0.0004, phase 0.001°, delay 0.6 ps).
+- **ADC_D:** as expected. The gain is the ADCs' 0.994 times the two DACs' ratio. The phase is 180° because the DACs put Q 90° ahead of I, where the RX convention (a downconverting mixer, upper sideband) has it behind. The delay is the DAC tile skew of that power-up (Q ahead, about 3.07 ns, since the setup's Q delay was 0) plus the 8 ps between ADC_C and ADC_D.
+- **ADC_B** reads about twice the scale of ADC_C and ADC_D and adds about 90°. Both are constant, so a calibration absorbs them, but use ADC_D and ADC_C as the I/Q pair. Its gain ratio (2.007) is also above the setup field's limit of 2, so it could not be stored from the page.
+- **About 40 dB of image rejection**, limited by small differences between the two paths' frequency responses, which one gain, phase and delay can't follow. An uncalibrated MMIQ-0416LS gives 25–30 dB, so the board is not the limit.
+
 ## The LO
 
 The LO is a Keysight **N5166B CXG** (option 506: 9 kHz to 6 GHz, up to about +18 dBm), controlled over **LAN** with SCPI on port 5025.
