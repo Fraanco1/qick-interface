@@ -49,7 +49,7 @@ DAC_B (Q) ─┘
 - One LO serves both tones (upper sideband). The CXG reaches 6 GHz, so with the LO at 6.0 GHz: readout at about 7 GHz (IF ≈ 1.0 GHz, under the ADC's 2.21 GHz), qubit at about 10 GHz (IF ≈ 4.0 GHz, under the DAC's 4.9 GHz; the DAC's own roll-off costs about 2.4 dB there). The MMIQ accepts LO 4–16 GHz and IF up to 6 GHz.
 - The mixer accepts LO 4–16 GHz at 7–16 dBm (13 dBm nominal) and IF from DC to 6 GHz. Datasheet notes: [mixer-mmiq-0416ls.md](research/mixer-mmiq-0416ls.md).
 - Run the [I/Q calibration](user-guide.md#iq-calibration-iq-chips-only) after any change to the LO frequency or power.
-- The return path is a real mixer into one ADC. An I/Q return path (two ADCs) is planned but not built.
+- The return path is a real mixer into one ADC. An [I/Q return path](#iq-return-path) (two ADCs) is available; the board side is checked, but not yet with a real I/Q mixer.
 
 ### Fluxonium: real mixers, separate control line
 
@@ -83,18 +83,30 @@ MMIQ I output ──cable A──▶ ADC_D        MMIQ Q output ──cable B─
 
 Cables of equal length matter: each centimetre of difference adds about 48 ps between I and Q, 3.5° at 200 MHz IF. The RX I/Q calibration removes what is left (see the user guide).
 
-**Before relying on it**, check once on the bench that the two readouts keep a fixed phase between runs:
+**Before relying on it**, check on the bench that the two readouts keep a fixed phase between runs:
 
 ```
-DAC_B ──▶ power splitter ──▶ ADC_D
-                         └──▶ ADC_C
+DAC_A or DAC_B ──▶ power splitter ──▶ ADC_D
+                                  └──▶ ADC_C
 ```
 
 ```bash
-.venv/bin/python scripts/hardware_two_readouts.py       # 10 runs, 100–1000 MHz
+.venv/bin/python scripts/hardware_two_readouts.py               # 10 runs from DAC_B, 500–2000 MHz
+.venv/bin/python scripts/hardware_two_readouts.py 10 DAC_A      # runs, DAC
 ```
 
-The phase spread between runs must be well under 1°. The delay it prints is the difference between the two cables and board paths.
+The phase spread between runs must be well under 1°. The delay it prints is the difference between the two cables and board paths. The sweep stays inside 0.5–2 GHz: a splitter below its rated band adds its own imbalance.
+
+**Measured 2026-11-05** (DAC_A → Mini-Circuits ZN2PD-183W-S+, 0.5–18 GHz → ADC_C and ADC_D):
+
+| | Before a power-up | After a power-up |
+|---|---|---|
+| Phase C/D at 500 MHz | 1.10–1.16° | 1.05–1.13° |
+| Spread between runs | 0.067° | 0.082° |
+| Level ratio C/D | 0.9940 | 0.9943 |
+| Delay between the paths | 8.1 ps | 7.9 ps |
+
+The readouts are locked, and unlike the DACs (see "The oscilloscope" below) their relation does not change at power-up. So the RX I/Q calibration should stay valid across power-ups; confirm it once with the real mixer.
 
 ## The LO
 

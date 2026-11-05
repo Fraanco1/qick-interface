@@ -1,10 +1,11 @@
 """Manual bench check for the I/Q return path: is the phase between two readouts the same every run?
 
-Wiring: DAC_B -> power splitter -> ADC_D and ADC_C (equal cables if possible). No mixer, no LO.
+Wiring: a DAC (DAC_B unless given) -> power splitter -> ADC_D and ADC_C (equal cables if possible). No mixer,
+no LO. The sweep stays in 0.5-2 GHz, inside a ZN2PD-183W-S+ splitter's range (0.5-18 GHz) and the ADCs' IF limit.
 Both readouts then see the same signal, so Y_C / Y_D should be a fixed complex number: its phase may
 vary with frequency (the cable difference, a delay) but must repeat from run to run. If it doesn't,
 the two readouts' reference oscillators are not locked and the I/Q return path can't be calibrated.
-Usage: .venv/bin/python scripts/hardware_two_readouts.py [runs]
+Usage: .venv/bin/python scripts/hardware_two_readouts.py [runs] [DAC_A or DAC_B]
 """
 import sys
 
@@ -15,9 +16,10 @@ from qick_interface.measurements.resonator_sweep import ResonatorSweep, Resonato
 from qick_interface.profiles import SetupProfile
 
 runs = int(sys.argv[1]) if len(sys.argv) > 1 else 10
-profile = SetupProfile(chip="Splitter", lo_mhz=None, readout_dac="DAC_B",
+dac = sys.argv[2] if len(sys.argv) > 2 else "DAC_B"
+profile = SetupProfile(chip="Splitter", lo_mhz=None, readout_dac=dac,
                        return_path="iq", i_adc="ADC_D", q_adc="ADC_C")
-params = ResonatorSweepParams(rf_start_mhz=100.0, rf_stop_mhz=1000.0, points=91, averages=200, rounds=1)
+params = ResonatorSweepParams(rf_start_mhz=500.0, rf_stop_mhz=2000.0, points=151, averages=200, rounds=1)
 
 board = QickBoard()
 ratios = []
