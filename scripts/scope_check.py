@@ -202,7 +202,12 @@ try:
                         readout_pulse_us=1.0), 0.4),
             ("flat 0.3 µs, then a half-height readout after 200 ns",
              RabiParams(sweep="length", qubit_freq_mhz=50, readout_freq_mhz=90, qubit_gain=0.5, scope_length_us=0.3,
-                        readout_gain=0.25, readout_pulse_us=1.0, readout_gap_us=0.2), 0.3)):
+                        readout_gain=0.25, readout_pulse_us=1.0, readout_gap_us=0.2), 0.3),
+            # the delay counts from the end of the falling edge: the pulse lasts flat + 8σ
+            ("Gaussian edges σ 20 ns around 0.3 µs flat, then readout after 200 ns",
+             RabiParams(sweep="length", shape="gaussian edges", edge_sigma_us=0.02, qubit_freq_mhz=50,
+                        readout_freq_mhz=90, qubit_gain=0.5, scope_length_us=0.3, readout_gain=0.5,
+                        readout_pulse_us=1.0, readout_gap_us=0.2), 0.3 + 8 * 0.02)):
         setup_scope(2e-6)
         play(Rabi.sequence(board.soccfg, transmon, params))
         t, ch1, ch2 = acquire_ranged()
