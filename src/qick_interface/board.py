@@ -22,7 +22,7 @@ class FakeBoard:
 
     def __init__(self, soccfg, simulate: Callable, round_time_s: float = 0.0):
         self.soccfg = soccfg
-        self.calibration = BoardCalibration()  # power scales of the converters; the app loads board.json
+        self.calibration = BoardCalibration()  # power scales of the converters; the app loads profiles/board/calibration.json
         self._simulate = simulate
         self._round_time_s = round_time_s
         self.playing = None  # program left playing by play(), for tests
@@ -60,7 +60,7 @@ class QickBoard:
         self._soc = Pyro4.Proxy(self._ns.lookup(name))
         self._soc._pyroTimeout = self.CALL_TIMEOUT_S
         self.soccfg = QickConfig(self._soc.get_cfg())
-        self.calibration = BoardCalibration()  # power scales of the converters; the app loads board.json
+        self.calibration = BoardCalibration()  # power scales of the converters; the app loads profiles/board/calibration.json
         if self.soccfg["sw_version"] != qick.__version__:
             raise RuntimeError(f"QICK version mismatch: board {self.soccfg['sw_version']}, "
                                f"PC {qick.__version__}. Install the same version on both.")

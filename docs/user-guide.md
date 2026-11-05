@@ -49,7 +49,7 @@ Press **Save setup**. To add a chip, change the name and save; the old chip stay
 
 The bottom of **Setup** lists the chip's *chip parameters*: values measured on it, filled in by the measurements below.
 
-Setups and chip parameters are stored on the lab PC in `profiles/` (setups as `<chip>.json`, parameters in `profiles/parameters/<chip>.json`). They are not in git, so include that folder in the lab PC's backups.
+Setups and chip parameters are stored on the lab PC in `profiles/` (setups as `<chip>.json`, parameters in `profiles/parameters/<chip>.json`, the board calibration in `profiles/board/calibration.json`). They are not in git, so include that folder in the lab PC's backups.
 
 The app checks every frequency against the setup before running. For example, it refuses an RF on the wrong side of the LO, or an IF above 2211.84 MHz for a tone the ADC must receive. The message says what to change.
 

@@ -418,7 +418,7 @@ function renderSetupPanel() {
   applyControl();
 }
 
-// ---- the board's power calibration: shared by every chip (profiles/board.json, see power.py) ----
+// ---- the board's power calibration: shared by every chip (profiles/board/calibration.json, see power.py) ----
 async function loadBoard() { state.board = await api("GET", "/api/board").catch(() => null); }
 
 const pointsText = (table) => table.points.map(([f, dbm]) => `${f} ${dbm}`).join("\n");

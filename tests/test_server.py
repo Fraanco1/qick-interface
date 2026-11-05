@@ -541,3 +541,25 @@ def test_gain_fields_get_their_drive_power_in_dbm(client):
     assert hints["gain"] == "≈ −7.1 dBm at DAC_B (data sheet)"  # at the sweep center, 150 MHz: −1.09 dBm full scale, −6.02 dB
     assert rabi["readout_gain"] == "≈ −7.0 dBm at DAC_B (data sheet)"
     assert rabi["scope_gain"] == "≈ −13.1 dBm peak at DAC_B (data sheet)"  # a Gaussian peaks 6 dB lower
+
+
+def test_a_saved_board_calibration_is_not_taken_for_a_chip(client):
+    client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
+    client.put("/api/board", json=client.get("/api/board").json(), headers=as_client("alice"))
+
+    assert list(client.get("/api/profiles").json()) == ["Loopback"]
+
+
+def test_a_calibration_saved_by_the_first_version_is_moved_out_of_the_chips(tmp_path):
+    from qick_interface.power import BoardCalibration
+    old = BoardCalibration()
+    old.adc_full_scale_dbm["ADC_D"].source = "loopback, first version"
+    (tmp_path / "profiles").mkdir()
+    (tmp_path / "profiles" / "board.json").write_text(old.model_dump_json())
+
+    app = create_app(FakeBoard(SOCCFG, flat_response), data_dir=tmp_path / "data", profiles_dir=tmp_path / "profiles")
+    with TestClient(app) as client:
+        assert client.get("/api/profiles").json() == {}
+        assert client.get("/api/board").json()["adc_full_scale_dbm"]["ADC_D"]["source"] == "loopback, first version"
+    assert not (tmp_path / "profiles" / "board.json").exists()

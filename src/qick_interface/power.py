@@ -37,7 +37,7 @@ class Table(BaseModel):
 
 
 class BoardCalibration(BaseModel):
-    """Stored in profiles/board.json; shared by every chip."""
+    """Stored in profiles/board/calibration.json; shared by every chip."""
     dac_full_scale_dbm: dict[str, Table] = Field(default_factory=lambda: {
         port: Table(points=DATASHEET_DAC) for port in ("DAC_A", "DAC_B")})
     adc_full_scale_dbm: dict[str, Table] = Field(default_factory=lambda: {
@@ -59,14 +59,23 @@ class BoardCalibration(BaseModel):
         return np.sqrt(2 * LOAD_OHMS * full_scale_w) / FULL_SCALE_COUNTS
 
 
+# In a subfolder: every *.json directly in the profiles folder is a chip's setup
+def _path(directory: Path) -> Path:
+    return directory / "board" / "calibration.json"
+
+
 def load_board(directory: Path) -> BoardCalibration:
-    path = directory / "board.json"
+    old = directory / "board.json"  # where the first version kept it, among the chips
+    if old.exists() and not _path(directory).exists():
+        _path(directory).parent.mkdir(parents=True, exist_ok=True)
+        old.rename(_path(directory))
+    path = _path(directory)
     return BoardCalibration.model_validate_json(path.read_text()) if path.exists() else BoardCalibration()
 
 
 def save_board(directory: Path, calibration: BoardCalibration) -> None:
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / "board.json").write_text(calibration.model_dump_json(indent=2))
+    _path(directory).parent.mkdir(parents=True, exist_ok=True)
+    _path(directory).write_text(calibration.model_dump_json(indent=2))
 
 
 def calibrate_adc_from_loopback(board, calibration: BoardCalibration, dac: str, adc: str) -> BoardCalibration:

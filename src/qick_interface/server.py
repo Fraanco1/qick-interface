@@ -188,7 +188,7 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None, scope=None) -
 
     @app.post("/api/board/adc-from-loopback")
     def adc_from_loopback(req: LoopbackRequest, x_client_id: str = Header()):
-        """The ADC's full scale from a cable req.dac → req.adc, trusting the DAC's table; kept in board.json."""
+        """The ADC's full scale from a cable req.dac → req.adc, trusting the DAC's table; kept in profiles/board/calibration.json."""
         try:
             new = session.measure(x_client_id, lambda b: calibrate_adc_from_loopback(b, b.calibration, req.dac, req.adc),
                                   None)
