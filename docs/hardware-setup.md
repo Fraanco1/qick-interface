@@ -71,9 +71,12 @@ A setup profile with the **LO empty**, readout output DAC_B and readout input AD
 ```bash
 .venv/bin/python scripts/hardware_sweep.py              # 100–1000 MHz, 1001 points
 .venv/bin/python scripts/hardware_sweep.py 100 500 201  # start, stop (MHz), points
+.venv/bin/python scripts/hardware_sweep.py ADC_C        # the loopback into another ADC
 ```
 
 It prints |S21| and the phase spread per round, and the total time (about 0.34 s per round for 1001 points × 100 averages). It then checks CW Time: windows from 0.5 to 100 µs, the level against the sweep, noise against window length, phase between sweeps, and the real time per point.
+
+On the bench loopback (2026-11-05, DAC_B → ADC_C): time of flight 0.295 µs at every frequency from 150 MHz to 2 GHz; electrical delay −116 ns in both pulsed and CW mode, whatever the time of flight; with ADC_C calibrated from the loopback, a sweep at gain 0.5 reads −7.15 dBm at 550 MHz (DAC_B data sheet: −7.0 dBm).
 
 ### I/Q return path
 

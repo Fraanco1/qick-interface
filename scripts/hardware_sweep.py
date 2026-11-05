@@ -1,7 +1,7 @@
 """Manual hardware check: resonator sweep, then CW Time, on the real board, with timing.
 
-Default wiring is the bench loopback DAC_B -> ADC_D with no LO.
-Usage: .venv/bin/python scripts/hardware_sweep.py [rf_start rf_stop points]
+Default wiring is the bench loopback DAC_B -> ADC_D with no LO; name another ADC to use it.
+Usage: .venv/bin/python scripts/hardware_sweep.py [rf_start rf_stop points] [ADC_C]
 """
 import sys
 import time
@@ -13,8 +13,10 @@ from qick_interface.measurements.cw_time import CwTime, CwTimeParams
 from qick_interface.measurements.resonator_sweep import ResonatorSweep, ResonatorSweepParams
 from qick_interface.profiles import SetupProfile
 
-start, stop, points = (float(sys.argv[1]), float(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (100.0, 1000.0, 1001)
-profile = SetupProfile(chip="Loopback", lo_mhz=None, readout_dac="DAC_B", readout_adc="ADC_D")
+adc = next((a for a in sys.argv[1:] if a.startswith("ADC_")), "ADC_D")
+numbers = [a for a in sys.argv[1:] if not a.startswith("ADC_")]
+start, stop, points = (float(numbers[0]), float(numbers[1]), int(numbers[2])) if len(numbers) > 2 else (100.0, 1000.0, 1001)
+profile = SetupProfile(chip="Loopback", lo_mhz=None, readout_dac="DAC_B", readout_adc=adc)
 params = ResonatorSweepParams(rf_start_mhz=start, rf_stop_mhz=stop, points=points, averages=100, rounds=5)
 
 board = QickBoard()
