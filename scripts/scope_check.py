@@ -3,7 +3,7 @@
 Wiring: DAC_A -> a scope channel (CH1 unless given), PMOD0_0 -> scope CH2, DAC_B -> ADC_D (loopback), and
 the scope's USB to the board (served by board/qick_service.py as "scope"). Tones are at 50-100 MHz so the
 scope (200 MHz, 1 GS/s) shows the carrier. Sections:
-  1-2. Two-tone and Rabi qubit pulses on DAC_A as a control line (fluxonium-like);
+  1-2. Two-tone and Rabi qubit pulses (flat, Gaussian, Gaussian edges) on DAC_A as a control line (fluxonium-like);
   3.   qubit pulse, delay and readout pulse all on DAC_A, no control line (transmon-like);
   4.   time between shots.
 This script changes the scope's trigger, timebase and vertical settings.
@@ -183,6 +183,16 @@ try:
     check("Gaussian FWHM (2.355 σ)", p["fwhm_us"], 0.2355, 0.01, " µs")
     check("PMOD high for 4σ", p["marker_us"], 0.4, 0.01, " µs")
     check("peak / flat pulse at the same gain (QICK: 0.5)", p["peak_v"] / ref["amplitude_v"], 0.5, 0.03)
+
+    # Gaussian edges (flat_top): 4σ rise, the flat part, 4σ fall; QICK plays the flat part at half the gain
+    edges = rabi.model_copy(update={"shape": "gaussian edges", "edge_sigma_us": 0.02, "scope_length_us": 0.3})
+    setup_scope(1e-6)
+    play(Rabi.sequence(board.soccfg, profile, edges))
+    p = pulse(*acquire_ranged(), 50)
+    show("Rabi length, Gaussian edges σ 20 ns, flat 0.3 µs, gain 0.5", p)
+    check("FWHM (flat + 2 × 1.177 σ)", p["fwhm_us"], 0.3 + 2 * 1.1774 * 0.02, 0.01, " µs")
+    check("PMOD high for the whole pulse (flat + 8σ)", p["marker_us"], 0.3 + 8 * 0.02, 0.01, " µs")
+    check("flat part / flat pulse at the same gain (QICK: 0.5)", p["amplitude_v"] / ref["amplitude_v"], 0.5, 0.03)
 
     # 3. Transmon-like: qubit pulse, delay and readout pulse on the same DAC (no control line)
     transmon = profile.model_copy(update={"readout_dac": "DAC_A", "control_dac": None})

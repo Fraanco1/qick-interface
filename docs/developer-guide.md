@@ -141,7 +141,7 @@ Tests are written first (red, then green) and only at four agreed places:
 | Frequency planning | `tests/test_frequency.py` | wiring and sideband mistakes, out-of-range IFs | QICK's frequency rounding |
 | Measurements on `FakeBoard` | `tests/test_resonator_sweep.py`, `test_cw_time.py`, `test_two_tone.py`, `test_rabi.py`, `test_iq_return.py`, `test_iq_output.py`, `test_iq_delay.py`, `test_power.py`, `test_time_of_flight.py` | the program compiles for this firmware, axes, processing, fits | real timing, Pyro4 |
 | Server | `tests/test_server.py` (with `tests/fake_cxg.py`, a stand-in CXG on localhost) | controller rules, schemas, live updates, saving, tone | how the page looks |
-| Real board | `scripts/hardware_sweep.py`, `scripts/hardware_two_readouts.py`, `scripts/scope_check.py` (manual) | the whole chain on hardware; `scope_check.py [channel of DAC_A]` measures on the oscilloscope the qubit pulses on a control line and, transmon-like, the qubit pulse, delay and readout pulse on one DAC (lengths, carriers, gain, Gaussian width, readout timing, PMOD marker, shot period; about 1 min) | — |
+| Real board | `scripts/hardware_sweep.py`, `scripts/hardware_two_readouts.py`, `scripts/scope_check.py` (manual) | the whole chain on hardware; `scope_check.py [channel of DAC_A]` measures on the oscilloscope the qubit pulses on a control line and, transmon-like, the qubit pulse, delay and readout pulse on one DAC (lengths, carriers, gain, Gaussian width, Gaussian edges, readout timing, PMOD marker, shot period; about 1 min) | — |
 
 - **Firmware fixture.** Measurement tests compile real QICK programs against `tests/fixtures/soccfg_rfsoc4x2.json`, a copy of the board's firmware configuration. After changing the firmware, refresh it:
 
