@@ -1,4 +1,5 @@
-"""Rabi: sweep the qubit pulse amplitude (Gaussian) or length (flat) and fit a damped cosine."""
+"""Rabi: sweep the qubit pulse amplitude (Gaussian) or length (flat, or flat with Gaussian edges) and fit a
+damped cosine. Why these shapes: docs/research/pulse-shapes.md."""
 import warnings
 from collections.abc import Callable, Iterator
 from typing import Literal
@@ -26,6 +27,12 @@ class RabiParams(BaseModel):
     stop: float = _f(1.0, group="Sweep", gt=0, title="Stop", description="gain, or µs for a length sweep")
     points: int = _f(101, group="Sweep", ge=3, le=2001, title="Points")
     qubit_freq_mhz: float = _f(group="Qubit", unit="MHz", chip="qubit_freq_mhz", title="Qubit frequency")
+    shape: Literal["flat", "gaussian edges"] = _f("flat", group="Qubit", when={"sweep": "length"}, title="Shape",
+                                                  description="Gaussian edges: a flat part, swept, between two Gaussian "
+                                                              "edges. QICK plays it at half the gain.")
+    edge_sigma_us: float = _f(0.005, group="Qubit", unit="µs", gt=0, le=0.5,
+                              when={"sweep": "length", "shape": "gaussian edges"}, title="Edge σ",
+                              description="Each edge lasts 4σ.")
     qubit_gain: float = _f(0.5, group="Qubit", chip="qubit_gain", ge=0, le=1, when={"sweep": "length"}, title="Qubit gain")
     sigma_us: float = _f(0.02, group="Qubit", unit="µs", chip="pi_sigma_us", gt=0, le=10,
                          when={"sweep": "amplitude"}, title="Gaussian σ")
@@ -56,6 +63,11 @@ class _Program(TonesMixin, AveragerProgramV2):
             self.add_gauss_envelope(cfg, "gauss", sigma=cfg["sigma"], length=4 * cfg["sigma"], line="control")
             self.add_tone(cfg, "qubit", freq=cfg["qubit_freq"], gain=cfg["swept"], style="arb", envelope="gauss",
                           line="control")
+        elif cfg["shape"] == "gaussian edges":  # the flat part is swept; the ramps are the two halves of 8σ
+            sigma = cfg["edge_sigma"]
+            self.add_gauss_envelope(cfg, "edges", sigma=sigma, length=8 * sigma, line="control")
+            self.add_tone(cfg, "qubit", freq=cfg["qubit_freq"], gain=cfg["qubit_gain"], length=cfg["swept"],
+                          style="flat_top", envelope="edges", line="control")
         else:
             self.add_tone(cfg, "qubit", freq=cfg["qubit_freq"], gain=cfg["qubit_gain"], length=cfg["swept"],
                           line="control")
@@ -66,17 +78,25 @@ class _Program(TonesMixin, AveragerProgramV2):
         send_readouts(self, cfg, "ro")
         self.play_tone(cfg, "qubit", t=0)
         if cfg["scope"]:  # PMOD0_0 is high while the qubit pulse plays
-            self.trigger(pins=[0], t=0, width=4 * cfg["sigma"] if cfg["sweep"] == "amplitude" else cfg["swept"])
+            self.trigger(pins=[0], t=0, width=_qubit_pulse_us(cfg))
         self.delay_auto(t=cfg["readout_gap"])  # from the end of the qubit pulse
         self.play_tone(cfg, "readout", t=0)
         self.read(cfg, pins=None if cfg["scope"] else [0], t=cfg["trigger_delay"])
 
 
 
+def _qubit_pulse_us(cfg):
+    """The whole qubit pulse, edges included (the scope sequence plays one length, not a sweep)."""
+    if cfg["sweep"] == "amplitude":
+        return 4 * cfg["sigma"]
+    return cfg["swept"] + (8 * cfg["edge_sigma"] if cfg["shape"] == "gaussian edges" else 0)
+
+
 def _check_shortest(soccfg, profile, params, length_us, field):
     """QICK plays no pulse shorter than 3 cycles of the generator's clock (asm_v2: "shorter than the
     min of 3"); say so in the app's terms before QICK does. length_us: the shortest flat pulse asked
-    for (a length sweep's Start, or the Output length), named by `field`; a Gaussian lasts 4σ."""
+    for (a length sweep's Start, or the Output length), named by `field`; a Gaussian lasts 4σ, and so
+    does each Gaussian edge, a segment of its own."""
     gen = control_outputs(soccfg, profile)[0].gen
     shortest_us = soccfg.cycles2us(3, gen_ch=gen)
     cycle_ns = 1e3 / soccfg["gens"][gen]["f_fabric"]
@@ -85,6 +105,8 @@ def _check_shortest(soccfg, profile, params, length_us, field):
         raise ValueError(f"{limit}; set {field} to at least {shortest_us:.4f} µs.")
     if params.sweep == "amplitude" and 4 * params.sigma_us < shortest_us:
         raise ValueError(f"{limit}, and the Gaussian lasts 4σ; set σ to at least {shortest_us / 4 * 1e3:.2f} ns.")
+    if params.sweep == "length" and params.shape == "gaussian edges" and 4 * params.edge_sigma_us < shortest_us:
+        raise ValueError(f"{limit}, and each edge lasts 4σ; set Edge σ to at least {shortest_us / 4 * 1e3:.2f} ns.")
 
 
 class Rabi:
@@ -92,7 +114,7 @@ class Rabi:
     Params = RabiParams
     x_axis = {"title": "Qubit gain", "unit": ""}
     marker_sets = None
-    drive_fields = {"qubit_gain": ("qubit_freq_mhz", "qubit", "flat"), "scope_gain": ("qubit_freq_mhz", "qubit", "gauss"),
+    drive_fields = {"qubit_gain": ("qubit_freq_mhz", "qubit", lambda p: "flat_top" if p("shape") == "gaussian edges" else "flat"), "scope_gain": ("qubit_freq_mhz", "qubit", "gauss"),
                     "readout_gain": ("readout_freq_mhz", "readout", "flat")}
     plots = [{"title": "Signal", "unit": "a.u.", "traces": ["Signal", "Fit"],
               "absolute": {"title": "Signal at the ADC", "unit": "mV", "traces": ["Signal (mV)", "Fit (mV)"]}},
@@ -119,6 +141,8 @@ class Rabi:
             "qubit_freq": qubit.if_start,
             "qubit_gain": params.qubit_gain,
             "sigma": params.sigma_us,
+            "shape": params.shape,
+            "edge_sigma": params.edge_sigma_us,
             "readout_freq": readout.if_start,
             "readout_gain": params.readout_gain,
             "readout_gap": params.readout_gap_us,
@@ -144,6 +168,10 @@ class Rabi:
         x = cls.x_values(program)
         if params.sweep == "amplitude":
             x_axis, info_name = {"title": "Qubit gain", "unit": ""}, "π-pulse gain"
+        elif params.shape == "gaussian edges":
+            edges = 8 * params.edge_sigma_us
+            x_axis = {"title": f"Flat length (plus {edges:g} µs of edges)", "unit": "µs"}
+            info_name = "π-pulse flat length (µs)"
         else:
             x_axis, info_name = {"title": "Qubit pulse length", "unit": "µs"}, "π-pulse length (µs)"
 

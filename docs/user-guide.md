@@ -153,9 +153,13 @@ The qubit shows as a dip or peak in the readout signal. Put the marker on it and
 Measurement: **Rabi**. Qubit and readout frequencies are filled in from steps 1 and 2.
 
 - **Sweep = Amplitude:** a Gaussian pulse of width **Gaussian σ** (total length 4σ) whose gain goes from Start to Stop. The Qubit menu shows Gaussian σ.
-- **Sweep = Length:** a flat pulse of gain **Qubit gain** whose length goes from Start to Stop (µs). The Qubit menu shows Qubit gain.
+- **Sweep = Length:** a pulse of gain **Qubit gain** whose length goes from Start to Stop (µs). The Qubit menu shows Qubit gain and **Shape**:
+  - **Flat** (default): a square pulse. Fine for Rabi frequencies up to about 20 MHz on a transmon.
+  - **Gaussian edges:** a flat part between two Gaussian edges of width **Edge σ** (default 5 ns), each lasting 4σ. The flat part is swept; the x-axis and the π-pulse length are the flat part's, and the axis title shows how long the edges add. Its sharper spectrum leaks less into other transitions with fast drives. QICK plays the flat part at half the gain: at the same Qubit gain it drives half as hard as Flat, and its drive power hint is 6 dB lower. The flat part is at least 4.9 ns, so the sweep never reaches zero rotation.
 
-**Readout → Delay before readout** (default 0.05 µs) sets the wait from the end of the qubit pulse to the start of the readout pulse; 0 starts the readout right away. The board plays no pulse shorter than 3 cycles of its 1.63 ns clock: a flat pulse is at least 4.9 ns (start a length sweep at 0.005 µs), and a Gaussian needs σ of at least 1.22 ns. Lengths are rounded to whole cycles (1.63 ns); the x-axis shows the lengths actually played. Shorter values are refused with a message saying so.
+  See `docs/research/pulse-shapes.md` for why these shapes.
+
+**Readout → Delay before readout** (default 0.05 µs) sets the wait from the end of the qubit pulse to the start of the readout pulse; 0 starts the readout right away. The board plays no pulse shorter than 3 cycles of its 1.63 ns clock: a flat pulse is at least 4.9 ns (start a length sweep at 0.005 µs), and a Gaussian, or a Gaussian edge, needs σ of at least 1.22 ns. Lengths are rounded to whole cycles (1.63 ns); the x-axis shows the lengths actually played. Shorter values are refused with a message saying so.
 
 **Tr1** is the readout signal along the direction it moves in the I/Q plane, with a damped-cosine fit as a dashed white line. **Tr2** is the phase.
 
@@ -168,7 +172,7 @@ When the fit explains the data, the screen shows the π-pulse (gain, or length i
 | Measurement | Field in Output | The point played |
 |---|---|---|
 | Rabi, amplitude sweep | Qubit gain (starts from the chip's π-pulse gain) | The Gaussian qubit pulse at that gain |
-| Rabi, length sweep | Qubit pulse length (µs) | The flat qubit pulse of that length |
+| Rabi, length sweep | Qubit pulse length (µs) | The qubit pulse with that flat length (plus its edges with Gaussian edges) |
 | Two-tone | Qubit frequency (RF, MHz; starts from the chip's qubit frequency) | The qubit pulse at that frequency |
 
 **Play sequence** starts it. Edits in any menu are applied at once while it plays. The status bar shows **Sequence** and the measurement. **Off** or starting a run stops it.
@@ -197,7 +201,7 @@ Switching Autoscale off keeps the current view; **Autoscale once** fits the curr
 - **Relative** (default): |S21| in dB and Rabi's Signal in a.u. Only shapes and differences mean something (see `docs/s21.md`).
 - **Absolute at the ADC:** the power arriving at the board's ADC input in **dBm**, and Rabi's Signal in **mV** (peak, 50 Ω). It is measured at the IF, after any receive mixer and amplifiers, so it is the power at the board, not at the chip. Phase traces do not change.
 
-Gain fields also show their drive power at the DAC output, e.g. "≈ −7.0 dBm at DAC_B (data sheet)"; a Gaussian shows its peak. On the I/Q output path it is the I DAC's power, before the mixer.
+Gain fields also show their drive power at the DAC output, e.g. "≈ −7.0 dBm at DAC_B (data sheet)"; a Gaussian shows its peak, and Gaussian edges their flat part (6 dB below Flat at the same gain). On the I/Q output path it is the I DAC's power, before the mixer.
 
 Both come from the **board calibration** (Setup → **Board** tab), shared by every chip: for each DAC, its output power at gain 1 against frequency; for each ADC, the input power that reads full scale. They start from the data sheets (`docs/research/converter-power-scale.md`). To make them real:
 

@@ -149,3 +149,54 @@ def test_the_readout_starts_after_the_delay_set_after_the_qubit_pulse(gap):
     params = RabiParams(**BASE, **({} if gap is None else {"readout_gap_us": gap}))
 
     assert gap_before_readout_us(Rabi.sequence(SOCCFG, TRANSMON, params)) == (0.05 if gap is None else gap)
+
+
+EDGES = dict(sweep="length", shape="gaussian edges", edge_sigma_us=0.005)
+
+
+def oscillating_with_edges(x_pi_total, sigma_us):
+    """A length sweep of a flat_top pulse: its ramps (8σ in all) rotate the qubit as much as 2.51σ of flat
+    part, so the qubit is excited when the flat part reaches x_pi_total − 2.51σ."""
+    def simulate(program):
+        x = Rabi.x_values(program) + 2.51 * sigma_us
+        excited = 0.5 - 0.5 * np.cos(np.pi * x / x_pi_total)
+        return [(200 + 60 * excited) * np.exp(0.7j) + 30]
+    return simulate
+
+
+def test_a_length_sweep_with_gaussian_edges_sweeps_the_flat_part_between_8_sigma_of_ramps():
+    programs = []
+
+    def capture(program):
+        programs.append(program)
+        return oscillating_with_edges(0.12, 0.005)(program)
+
+    params = RabiParams(**BASE, **EDGES, start=0.01, stop=0.6, qubit_gain=0.5)
+    last = list(Rabi.run(FakeBoard(SOCCFG, capture), TRANSMON, params))[-1]
+
+    flat = programs[0].get_pulse_param("qubit", "length", as_array=True)
+    total = programs[0].get_pulse_param("qubit", "total_length", as_array=True)
+    assert flat[0] == pytest.approx(0.01, abs=0.002)
+    assert total - flat == pytest.approx(np.full(flat.size, 8 * 0.005), abs=0.002)
+    assert last.info["π-pulse flat length (µs)"] == pytest.approx(0.12 - 2.51 * 0.005, abs=0.003)
+    assert last.x_axis == {"title": "Flat length (plus 0.04 µs of edges)", "unit": "µs"}
+
+
+def test_flat_is_the_default_shape():
+    program = Rabi.sequence(SOCCFG, TRANSMON, RabiParams(**BASE, sweep="length", scope_length_us=0.1))
+
+    assert program.get_pulse_param("qubit", "total_length") == pytest.approx(0.1, abs=0.002)
+
+
+def test_edges_too_short_for_the_board_are_refused_in_plain_words():
+    params = RabiParams(**BASE, **{**EDGES, "edge_sigma_us": 0.001}, start=0.01, stop=0.6)  # 4σ ramp = 4 ns
+
+    with pytest.raises(ValueError, match=SHORTEST):
+        list(Rabi.run(FakeBoard(SOCCFG, oscillating(0.4)), TRANSMON, params))
+
+
+def test_the_scope_marker_covers_the_edges_too():
+    program = Rabi.sequence(SOCCFG, TRANSMON, RabiParams(**BASE, **EDGES, scope_length_us=0.1))
+
+    marker = next(m for m in program.macro_list if type(m).__name__ == "Trigger" and m.pins)
+    assert marker.width == pytest.approx(0.1 + 8 * 0.005, abs=0.002)

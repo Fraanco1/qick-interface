@@ -108,6 +108,7 @@ def drive_hints(measurement, profile, params: dict, calibration: BoardCalibratio
     hints = {}
     for field, (freq, line, shape) in measurement.drive_fields.items():
         value = lambda name: params.get(name, measurement.Params.model_fields[name].default)
+        shape = shape(value) if callable(shape) else shape  # it may depend on another field
         try:
             gain = float(value(field))
             freqs = [float(value(f)) for f in (freq if isinstance(freq, tuple) else (freq,))]
@@ -124,7 +125,8 @@ def drive_hints(measurement, profile, params: dict, calibration: BoardCalibratio
                 if_mhz = plan_sweep(profile, rf, rf, drive_only=line == "qubit").if_start
             except FrequencyError:
                 continue
-        dbm = calibration.dac_dbm(port, if_mhz, gain * factor) - (6.02 if shape == "gauss" else 0.0)
+        # QICK plays a Gaussian's peak, and a flat_top's flat part, at half the gain
+        dbm = calibration.dac_dbm(port, if_mhz, gain * factor) - (6.02 if shape in ("gauss", "flat_top") else 0.0)
         if np.isfinite(dbm):
             peak = " peak" if shape == "gauss" else ""
             source = calibration.dac_full_scale_dbm[port].source

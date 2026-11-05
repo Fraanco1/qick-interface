@@ -563,3 +563,18 @@ def test_a_calibration_saved_by_the_first_version_is_moved_out_of_the_chips(tmp_
         assert client.get("/api/profiles").json() == {}
         assert client.get("/api/board").json()["adc_full_scale_dbm"]["ADC_D"]["source"] == "loopback, first version"
     assert not (tmp_path / "profiles" / "board.json").exists()
+
+
+def test_gaussian_edges_drive_6_db_below_a_flat_pulse_at_the_same_gain(client):
+    # QICK plays a flat_top's flat part at half the gain, to match its ramps
+    client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
+    dbm = lambda hint: float(hint.split()[1].replace("−", "-"))
+
+    def qubit_gain_hint(shape):
+        return client.post("/api/drive-power", json={"measurement": "rabi", "chip": "Loopback", "params": {
+            "sweep": "length", "shape": shape, "qubit_freq_mhz": 100.0, "readout_freq_mhz": 550.0,
+            "qubit_gain": 0.5}}).json()["qubit_gain"]
+
+    assert dbm(qubit_gain_hint("flat")) - dbm(qubit_gain_hint("gaussian edges")) == pytest.approx(6.02, abs=0.1)  # hints have one decimal
+    assert "peak" not in qubit_gain_hint("gaussian edges")  # the flat part is the level
