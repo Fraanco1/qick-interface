@@ -56,6 +56,7 @@ DAC_B (Q) ─┘
   - One setting for all IFs (phase **85.7°**, Q/I gain **0.995**, delay 1500 ps; saved in the Transmon setup): image 43–46 dB below the wanted tone for IF 50–700 MHz, 33–39 dB for 1–3 GHz.
   - Wanted tone −12.5 dBm at IF 50 MHz to −16.8 dBm at 3 GHz (DAC roll-off); LO leakage about −56 dBm at every IF.
   - The Q delay changes at every power-up of the board (see [dac-tile-sync.md](research/dac-tile-sync.md)): measure it again after each one.
+  - **Calibrate I/Q** (the app, same day, IF 50–3000 MHz every 250 MHz, 136 s): Q delay 1505.5 ps; image 66–74 dB below the tone at every table point, but only 34–49 dB between points (175, 640, 1111, 2222 MHz). A scan every 25 MHz (900–1400 MHz) shows why: the best Q phase and Q/I gain ripple with a **100 MHz period** (±1.5°, ±2.5 %), a reflection along about 1 m of cable (period = v / 2L, v ≈ 2.1·10⁸ m/s), most likely the DAC → mixer I/Q cables. A 250 MHz grid can't follow it. Either calibrate the band in use with a fine step (≤ 25 MHz; about 9 s per IF), or damp the ripple: 3–6 dB attenuators at the mixer's I and Q inputs (the reflection crosses them twice) and short, equal I/Q cables.
 - The return path is a real mixer into one ADC. An [I/Q return path](#iq-return-path) (two ADCs) is available; the board side is checked, but not yet with a real I/Q mixer.
 
 ### Fluxonium: real mixers, separate control line
