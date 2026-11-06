@@ -11,7 +11,7 @@ class SetupProfile(BaseModel):
 
     chip: str
     lo_mhz: float | None = None  # None: no mixer, RF = IF
-    lo_power_dbm: float = Field(13.0, ge=-110, le=18)  # set on the LO when the app controls it (--lo)
+    lo_power_dbm: float = Field(13.0, ge=-135, le=16)  # set on the LO when the app controls it (--lo); 16: the mixers' limit
     sideband: Literal["upper", "lower"] = "upper"  # upper: RF = LO + IF
     output_path: Literal["real", "iq"] = "real"
     readout_dac: str = "DAC_B"  # board port labels; used by the real output path

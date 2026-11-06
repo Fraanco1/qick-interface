@@ -1,10 +1,12 @@
-"""A stand-in for the Keysight N5166B CXG on localhost: SCPI over a plain socket, one command per line."""
+"""A stand-in for a Keysight signal generator on localhost: SCPI over a plain socket, one command per line.
+By default an N5166B CXG (9 kHz to 6 GHz, up to +18 dBm); pass another model and range for e.g. the EXG."""
 import socket
 import threading
 
 
 class FakeCxg:
-    def __init__(self):
+    def __init__(self, model="N5166B", freq_range_hz=(9e3, 6e9), power_range_dbm=(-110.0, 18.0)):
+        self.model, self.freq_range_hz, self.power_range_dbm = model, freq_range_hz, power_range_dbm
         self.freq_hz, self.power_dbm, self.output, self.modulation = 1e9, -20.0, False, True
         self.commands = []
         self._server = socket.create_server(("127.0.0.1", 0))
@@ -26,7 +28,11 @@ class FakeCxg:
         head, _, arg = cmd.partition(" ")
         head = head.upper()
         if head == "*IDN?":
-            return "Keysight Technologies,N5166B,MY00000000,B.01.00"
+            return f"Keysight Technologies,{self.model},MY00000000,B.01.00"
+        if head == ":FREQ?" and arg:
+            return f"{self.freq_range_hz[arg.upper() == 'MAX']:+.14E}"
+        if head == ":POW?" and arg:
+            return f"{self.power_range_dbm[arg.upper() == 'MAX']:+.8E}"
         if head == "*OPC?":
             return "1"
         if head == ":SYST:ERR?":

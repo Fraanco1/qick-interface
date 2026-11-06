@@ -163,7 +163,7 @@ Measurement: **Two-tone spectroscopy**. **Readout → Readout frequency** is alr
 | Readout | Readout frequency, gain, delay before readout (after the qubit pulse, default 0.05 µs), pulse length, window |
 | Average | Averages, Rounds, Repetition delay (default 500 µs: the qubit has to relax between shots, so use about 5×T1) |
 
-The qubit tone may use an IF up to 4915.2 MHz, since only the DAC has to produce it. With the LO at 6.0 GHz (the CXG's maximum), a qubit near 10 GHz needs an IF of about 4.0 GHz, which the DAC and the MMIQ-0416LS accept. With a **Control line** in the setup (e.g. a fluxonium), the qubit tone goes out on that DAC instead, with no mixer, so the qubit frequencies you type are the DAC frequencies.
+The qubit tone may use an IF up to 4915.2 MHz, since only the DAC has to produce it. With the LO at 6.0 GHz, for example, a qubit near 10 GHz needs an IF of about 4.0 GHz, which the DAC and the MMIQ-0416LS accept. With a **Control line** in the setup (e.g. a fluxonium), the qubit tone goes out on that DAC instead, with no mixer, so the qubit frequencies you type are the DAC frequencies.
 
 The qubit shows as a dip or peak in the readout signal. Put the marker on it and press **Marker → Qubit frequency**.
 

@@ -427,7 +427,7 @@ function hint(text) {
 const PROFILE_FIELDS = [
   ["chip", "Chip name", "text"],
   ["lo_mhz", "LO frequency", "number", "MHz", "Leave empty when there is no mixer (RF = IF)."],
-  ["lo_power_dbm", "LO power", "number", "dBm", "Set on the LO when the app controls it (started with --lo). The MMIQ wants about 13–15 dBm.", "lo"],
+  ["lo_power_dbm", "LO power", "number", "dBm", "Set on the LO when the app controls it (started with --lo). The MMIQ wants 7–16 dBm, 13 nominal; at most 16 dBm.", "lo"],
   ["sideband", "Sideband", ["upper", "lower"], null, "Upper: RF = LO + IF. Lower: RF = LO − IF.", "lo"],
   ["output_path", "Output path", ["real", "iq"], null, "I/Q: the tone goes out on two DACs into an I/Q mixer."],
   ["readout_dac", "Readout output", ["DAC_A", "DAC_B"], null, null, "real"],
@@ -480,7 +480,10 @@ function renderSetupPanel() {
 }
 
 // ---- the board's power calibration: shared by every chip (profiles/board/calibration.json, see power.py) ----
-async function loadBoard() { state.board = await api("GET", "/api/board").catch(() => null); }
+async function loadBoard() {
+  state.board = await api("GET", "/api/board").catch(() => null);
+  state.instruments = await api("GET", "/api/instruments").catch(() => ({ analyzer: null, lo: false }));
+}
 
 const pointsText = (table) => table.points.map(([f, dbm]) => `${f} ${dbm}`).join("\n");
 function parsePoints(text) {
@@ -530,6 +533,22 @@ function boardMenu() {
     finally { loopback.disabled = false; applyControl(); }
   });
   save.dataset.control = loopback.dataset.control = "1";
+  // a DAC's table measured on the signal analyzer (only when the app was started with --analyzer)
+  const analyzer = state.instruments?.analyzer;
+  const calDac = select(Object.keys(state.board.dac_full_scale_dbm), setup.control_dac || setup.i_dac || "DAC_A");
+  const loss = document.createElement("input");
+  loss.type = "number"; loss.step = "0.1"; loss.min = "0"; loss.max = "20"; loss.value = "0.5"; loss.dataset.control = "1";
+  const measureDac = button("Calibrate DAC with analyzer", async () => {
+    measureDac.disabled = true; message(`Measuring ${calDac.value} on the ${analyzer}, every 50 MHz (about a minute)…`);
+    try {
+      state.board = await api("POST", "/api/board/dac-from-analyzer", { dac: calDac.value, cable_loss_db: Number(loss.value) });
+      renderSetupPanel();
+      updateDriveHints();
+      message(`${calDac.value} calibrated on the ${analyzer}: its table now holds the measured output at gain 1.`);
+    } catch (e) { message(e.message, true); }
+    finally { measureDac.disabled = false; applyControl(); }
+  });
+  measureDac.dataset.control = "1";
   const dacs = Object.keys(state.board.dac_full_scale_dbm).map((p) => table("dac_full_scale_dbm", p, `${p} output at gain 1`));
   const adcs = Object.keys(state.board.adc_full_scale_dbm).map((p) => table("adc_full_scale_dbm", p, `${p} full scale`));
   const heading = (text) => { const h = document.createElement("h3"); h.className = "subhead"; h.textContent = text; return h; };
@@ -537,10 +556,19 @@ function boardMenu() {
   const loop = document.createElement("div"); loop.className = "setup-fields";
   loop.append(field("From DAC", dac), field("To ADC", adc));
   const keys = document.createElement("div"); keys.className = "setup-keys"; keys.append(save, loopback);
-  return [fields, heading("Loopback"), loop, keys,
+  const analyzerPart = [];
+  if (analyzer) {
+    const row = document.createElement("div"); row.className = "setup-fields";
+    row.append(field("DAC", calDac), field("Cable loss", loss, "dB"));
+    const k = document.createElement("div"); k.className = "setup-keys"; k.append(measureDac);
+    analyzerPart.push(heading(`Signal analyzer (${analyzer})`), row, k,
+      hint("Cable the DAC to the analyzer's RF input. The app plays a full-scale tone every 50 MHz from 50 to " +
+        "4900 MHz, reads each peak, adds the cable loss and replaces the DAC's table."));
+  }
+  return [fields, ...analyzerPart, heading("Loopback"), loop, keys,
     hint("Powers at the board's SMA connectors, 50 Ω, against frequency (MHz, dBm per line). DAC: output at gain 1 " +
-      "(flat pulse). ADC: the input that reads full scale. They start from the data sheets; type in a signal " +
-      "analyzer's values when measured. Calibrate ADC from loopback needs a short cable from the DAC to the ADC: " +
+      "(flat pulse). ADC: the input that reads full scale. They start from the data sheets; measure the DACs " +
+      "with the signal analyzer (or type values in). Calibrate ADC from loopback needs a short cable from the DAC to the ADC: " +
       "it trusts the DAC's table and measures the ADC's. Shared by every chip.")];
 }
 

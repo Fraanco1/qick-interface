@@ -47,7 +47,7 @@ DAC_B (Q) ─┘
 ```
 
 - Setup profile: output path **I/Q**, I = DAC_A, Q = DAC_B, readout input ADC_D.
-- One LO serves both tones (upper sideband). The CXG reaches 6 GHz, so with the LO at 6.0 GHz: readout at about 7 GHz (IF ≈ 1.0 GHz, under the ADC's 2.21 GHz), qubit at about 10 GHz (IF ≈ 4.0 GHz, under the DAC's 4.9 GHz; the DAC's own roll-off costs about 2.4 dB there). The MMIQ accepts LO 4–16 GHz and IF up to 6 GHz.
+- One LO serves both tones (upper sideband). For example, with the LO at 6.0 GHz: readout at about 7 GHz (IF ≈ 1.0 GHz, under the ADC's 2.21 GHz), qubit at about 10 GHz (IF ≈ 4.0 GHz, under the DAC's 4.9 GHz; the DAC's own roll-off costs about 2.4 dB there). The MMIQ accepts LO 4–16 GHz and IF up to 6 GHz.
 - The mixer accepts LO 4–16 GHz at 7–16 dBm (13 dBm nominal) and IF from DC to 6 GHz. Datasheet notes: [mixer-mmiq-0416ls.md](research/mixer-mmiq-0416ls.md).
 - Run the [I/Q calibration](user-guide.md#iq-calibration-iq-chips-only) after any change to the LO frequency or power.
 - The return path is a real mixer into one ADC. An [I/Q return path](#iq-return-path) (two ADCs) is available; the board side is checked, but not yet with a real I/Q mixer.
@@ -135,15 +135,23 @@ It runs the RX I/Q calibration several times over 100–1500 MHz, then applies i
 - **ADC_B** reads about twice the scale of ADC_C and ADC_D and adds about 90°. Both are constant, so a calibration absorbs them, but use ADC_D and ADC_C as the I/Q pair. Its gain ratio (2.007) is also above the setup field's limit of 2, so it could not be stored from the page.
 - **About 40 dB of image rejection**, limited by small differences between the two paths' frequency responses, which one gain, phase and delay can't follow. An uncalibrated MMIQ-0416LS gives 25–30 dB, so the board is not the limit.
 
+## Instruments on the wired network
+
+The lab PC (Windows) reaches them over SCPI on port 5025:
+
+| Instrument | Address | Notes |
+|---|---|---|
+| LO: Keysight (Agilent) EXG N5173B, 9 kHz–20 GHz, −135 to +30 dBm (options 520, 1EA, 1E1) | `192.168.1.100` | |
+| Signal analyzer: Keysight PXA N9032B | `169.254.136.224` | The app uses it with `--analyzer 169.254.136.224` (the Windows task does) for Setup → Board → **Calibrate DAC with analyzer**: a full-scale tone every 50 MHz from 50 to 4900 MHz, 1 MHz span, peak marker, plus the cable loss you type. During it the trace is set to clear/write (the PXA was found in Max Hold, which returned the same old peak every time) and put back afterwards; a peak marker outside the span stops the calibration. Measured 2026-11-06 with a 41 cm cable (0.15 dB): both DACs give −1.2 to −1.6 dBm below 1 GHz and fall to about −9 dBm at 4.9 GHz, much steeper than the data sheet; ADC_D and ADC_C (loopback from DAC_A) read full scale at +5.2 to +5.9 dBm, 2.5–3.5 dB above the data sheet. Its own automatic (link-local) address: its IP can't be changed without its administrator account. The lab PC has a second address on its Ethernet, `169.254.10.2/16`, and a route `169.254.136.224/32` through Ethernet; without the route Windows sends 169.254.x.x through Tailscale and gets no reply. It doesn't answer ping (its firewall); SCPI works. If the PXA ever shows another 169.254 address, replace the route: `New-NetRoute -DestinationPrefix <address>/32 -InterfaceAlias Ethernet -NextHop 0.0.0.0 -RouteMetric 0`. |
+
 ## The LO
 
-The LO is a Keysight **N5166B CXG** (option 506: 9 kHz to 6 GHz, up to about +18 dBm), controlled over **LAN** with SCPI on port 5025.
+The LO is a Keysight signal generator controlled over **LAN** with SCPI on port 5025: in the lab, the **EXG N5173B** at `192.168.1.100` (9 kHz to 20 GHz). A CXG N5166B (9 kHz to 6 GHz) works the same.
 
-- Connect it to the lab PC's network and note its IP address (on the CXG: **Utility → I/O Config → LAN Setup**).
-- Start the app with `--lo <address>`, e.g. `.venv/bin/python -m qick_interface --lo 192.168.1.50`.
-- Before every run or output tone, the app sets the CXG to the setup's **LO frequency** and **LO power**, turns modulation off (a pure CW tone) and RF on, waits for it to settle, and checks its error queue. RF stays on between runs. The status bar shows what the CXG read back, e.g. "LO 6.000 000 GHz 14 dBm".
-- An LO above 6 GHz, or a CXG that does not answer, stops the run with a message.
-- The MMIQ-0416LS wants about 13–15 dBm of LO.
+- Start the app with `--lo <address>`, e.g. `--lo 192.168.1.100` (the Windows task does).
+- Before every run or output tone, the app sets the generator to the setup's **LO frequency** and **LO power**, turns modulation off (a pure CW tone) and RF on, waits for it to settle, and checks its error queue. RF stays on between runs. The status bar shows what it read back, e.g. "LO 6.000 000 GHz 14 dBm".
+- The frequency and power range are the generator's own, read from it when it first answers. The LO power also stops at **+16 dBm**, the MMIQ-0416LS's limit (it wants 7–16 dBm, 13 nominal); the setup refuses more.
+- An LO out of range, or a generator that does not answer, stops the run with a message.
 
 Without `--lo` the LO is set by hand: type its frequency into the setup, and the app only uses it to convert between RF and IF.
 

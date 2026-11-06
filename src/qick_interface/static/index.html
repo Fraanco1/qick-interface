@@ -65,9 +65,11 @@
             settings; everyone else watches live. Talk to the current controller first.</li>
           <li><b>Calibrate the board's power (once per board; needed for dBm).</b> In <b>Setup → Board</b>:
             <ol type="a">
-              <li><b>DAC:</b> measure each DAC's output at gain 1 at a few frequencies with a signal analyzer. Type
-                them in its <b>output at gain 1</b> table (one "MHz dBm" per line), set <b>Source</b>, press
-                <b>Save board</b>.</li>
+              <li><b>DAC, with the signal analyzer</b> (app started with <code>--analyzer</code>): cable the DAC to
+                the analyzer's RF input, pick it under <b>Signal analyzer</b>, type the <b>Cable loss</b>, press
+                <b>Calibrate DAC with analyzer</b> (about a minute; every 50 MHz from 50 to 4900 MHz). Repeat for
+                the other DAC. Without an analyzer, type measured values into its <b>output at gain 1</b> table
+                (one "MHz dBm" per line), set <b>Source</b>, press <b>Save board</b>.</li>
               <li><b>ADC, from a loopback:</b> cable a DAC to an ADC with a short cable, pick them in <b>From DAC</b>
                 and <b>To ADC</b>, press <b>Calibrate ADC from loopback</b> (a few seconds).</li>
             </ol>
@@ -77,7 +79,7 @@
             has its own DAC (fluxonium). Press <b>Measure</b> next to <b>Time of flight</b>, then <b>Save setup</b>.
             <ul>
               <li><b>The LO:</b> unless the app was started with <code>--lo</code> (the status bar then shows the LO it
-                set), set the CXG by hand to the setup's LO frequency and power, RF on. The app only uses the value to
+                set), set the LO generator by hand to the setup's LO frequency and power, RF on. The app only uses the value to
                 convert between RF and IF; a wrong LO puts every frequency off, with no warning.</li>
               <li><b>Flux bias</b> (fluxonium) is set by hand on its current source, outside the app.</li>
               <li>Frequencies you type are RF, in MHz. On a control line the qubit frequency is the DAC's own (no

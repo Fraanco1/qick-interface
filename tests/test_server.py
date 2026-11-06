@@ -315,10 +315,10 @@ def test_resonator_sweep_can_store_its_electrical_delay_in_the_setup(client):
 
 def test_a_run_sets_the_lo_from_the_setup_and_leaves_it_on(tmp_path):
     from fake_cxg import FakeCxg
-    from qick_interface.lo import CxgLo
+    from qick_interface.lo import KeysightLo
     cxg = FakeCxg()
     app = create_app(FakeBoard(SOCCFG, flat_response), data_dir=tmp_path / "data",
-                     profiles_dir=tmp_path / "profiles", lo=CxgLo("127.0.0.1", cxg.port))
+                     profiles_dir=tmp_path / "profiles", lo=KeysightLo("127.0.0.1", cxg.port))
     with TestClient(app) as client:
         client.post("/api/control", headers=as_client("alice"))
         transmon = {**LOOPBACK, "chip": "Transmon", "lo_mhz": 6000.0, "lo_power_dbm": 13.0}
@@ -337,10 +337,10 @@ def test_a_run_sets_the_lo_from_the_setup_and_leaves_it_on(tmp_path):
 
 def test_an_lo_beyond_the_cxg_range_is_refused_before_the_run(tmp_path):
     from fake_cxg import FakeCxg
-    from qick_interface.lo import CxgLo
+    from qick_interface.lo import KeysightLo
     cxg = FakeCxg()
     app = create_app(FakeBoard(SOCCFG, flat_response), data_dir=tmp_path / "data",
-                     profiles_dir=tmp_path / "profiles", lo=CxgLo("127.0.0.1", cxg.port))
+                     profiles_dir=tmp_path / "profiles", lo=KeysightLo("127.0.0.1", cxg.port))
     with TestClient(app) as client:
         client.post("/api/control", headers=as_client("alice"))
         high = {**LOOPBACK, "chip": "High", "lo_mhz": 6800.0}
@@ -353,6 +353,54 @@ def test_an_lo_beyond_the_cxg_range_is_refused_before_the_run(tmp_path):
     assert response.status_code == 422
     assert "6000 MHz" in response.text
     assert not cxg.output
+
+
+def run_with_lo(tmp_path, cxg, lo_mhz, lo_power_dbm=13.0):
+    from qick_interface.lo import KeysightLo
+    app = create_app(FakeBoard(SOCCFG, flat_response), data_dir=tmp_path / "data",
+                     profiles_dir=tmp_path / "profiles", lo=KeysightLo("127.0.0.1", cxg.port))
+    with TestClient(app) as client:
+        client.post("/api/control", headers=as_client("alice"))
+        setup = {**LOOPBACK, "chip": "LO", "lo_mhz": lo_mhz, "lo_power_dbm": lo_power_dbm}
+        client.put("/api/profiles/LO", json=setup, headers=as_client("alice"))
+        sweep = {"measurement": "resonator_sweep", "chip": "LO",
+                 "params": {"rf_start_mhz": lo_mhz + 100, "rf_stop_mhz": lo_mhz + 200, "points": 11, "rounds": 1}}
+        return client.post("/api/runs", json=sweep, headers=as_client("alice"))
+
+
+def test_the_lo_range_is_the_connected_generators_own(tmp_path):
+    from fake_cxg import FakeCxg
+    exg = FakeCxg(model="N5173B", freq_range_hz=(9e3, 20e9), power_range_dbm=(-135.0, 30.0))
+
+    response = run_with_lo(tmp_path, exg, lo_mhz=12000.0)
+
+    assert response.status_code == 200
+    assert exg.freq_hz == 12e9 and exg.output
+
+
+def test_an_lo_beyond_the_generators_range_names_the_generator(tmp_path):
+    from fake_cxg import FakeCxg
+    exg = FakeCxg(model="N5173B", freq_range_hz=(9e3, 20e9), power_range_dbm=(-135.0, 30.0))
+
+    response = run_with_lo(tmp_path, exg, lo_mhz=21000.0)
+
+    assert response.status_code == 422
+    assert "N5173B" in response.text and "20000 MHz" in response.text
+    assert not exg.output
+
+
+def test_the_lo_power_stops_at_the_mixers_limit_even_if_the_generator_goes_higher(client):
+    from fake_cxg import FakeCxg
+    from qick_interface.lo import KeysightLo, LoError
+    exg = FakeCxg(model="N5173B", freq_range_hz=(9e3, 20e9), power_range_dbm=(-135.0, 30.0))
+
+    with pytest.raises(LoError, match="16 dBm, the mixers' limit"):
+        KeysightLo("127.0.0.1", exg.port).apply(6000.0, 20.0)
+    assert not exg.output
+    client.post("/api/control", headers=as_client("alice"))  # and the setup refuses it in the first place
+    response = client.put("/api/profiles/Hot", json={**LOOPBACK, "chip": "Hot", "lo_mhz": 6000.0, "lo_power_dbm": 20.0},
+                          headers=as_client("alice"))
+    assert response.status_code == 422
 
 
 def test_time_of_flight_is_part_of_the_setup_not_of_any_measurement(client):
@@ -593,3 +641,67 @@ def test_only_the_oscilloscope_offers_a_horizontal_scale(client):
     measurements = client.get("/api/measurements").json()
 
     assert {k for k, m in measurements.items() if m["x_scale"]} == {"oscilloscope"}
+
+
+def test_the_dac_calibration_needs_an_analyzer(client):
+    client.post("/api/control", headers=as_client("alice"))
+
+    assert client.get("/api/instruments").json()["analyzer"] is None
+    response = client.post("/api/board/dac-from-analyzer", json={"dac": "DAC_A", "cable_loss_db": 0.5},
+                           headers=as_client("alice"))
+    assert response.status_code == 503 and "--analyzer" in response.text
+
+
+def test_the_dac_is_calibrated_with_the_analyzer_and_kept(tmp_path, monkeypatch):
+    from fake_pxa import FakePxa
+    from qick_interface import power
+    from qick_interface.analyzer import KeysightAnalyzer
+    monkeypatch.setattr(power, "DAC_CAL_MHZ", np.array([100.0, 2000.0]))  # the full grid: test_power.py
+    board = FakeBoard(SOCCFG, flat_response)
+
+    def level(center_mhz):  # −1.5 dBm reaches the analyzer while a tone plays at its centre frequency
+        playing = board.playing
+        f = playing.get_pulse_param("tone", "freq") if playing is not None else None
+        return -1.5 if f is not None and abs(f - center_mhz) < 0.01 else -95.0
+    pxa = FakePxa(level)
+    app = create_app(board, data_dir=tmp_path / "data", profiles_dir=tmp_path / "profiles",
+                     analyzer=KeysightAnalyzer("127.0.0.1", pxa.port))
+    with TestClient(app) as client:
+        assert client.get("/api/instruments").json()["analyzer"] == "N9032B"
+        request = {"dac": "DAC_A", "cable_loss_db": 0.5}
+        assert client.post("/api/board/dac-from-analyzer", json=request, headers=as_client("bob")).status_code == 403
+        client.post("/api/control", headers=as_client("alice"))
+
+        response = client.post("/api/board/dac-from-analyzer", json=request, headers=as_client("alice"))
+
+        assert response.status_code == 200
+        kept = client.get("/api/board").json()["dac_full_scale_dbm"]["DAC_A"]
+    assert all(dbm == pytest.approx(-1.0) for _, dbm in kept["points"])  # −1.5 read + 0.5 of cable
+    assert "N9032B" in kept["source"]
+    assert json.loads((tmp_path / "profiles" / "board" / "calibration.json").read_text())["dac_full_scale_dbm"]["DAC_A"] == kept
+    assert pxa.continuous and board.playing is None  # the analyzer sweeps again, the DAC is silent
+
+
+def test_the_analyzer_reads_fresh_sweeps_and_gives_back_its_trace_mode():
+    # the lab PXA was left in Max Hold: every reading was the oldest peak (a flat −7.65 dBm table)
+    from fake_pxa import FakePxa
+    from qick_interface.analyzer import KeysightAnalyzer
+    pxa = FakePxa(lambda f: -1.0, trace_type="MAXH")
+    analyzer = KeysightAnalyzer("127.0.0.1", pxa.port)
+
+    analyzer.prepare()
+    assert pxa.trace_type == "WRIT"  # clear/write while measuring
+    analyzer.peak_dbm(1000.0)
+    analyzer.release()
+    assert pxa.trace_type == "MAXH" and pxa.continuous  # as it was found
+
+
+def test_a_marker_outside_the_span_stops_the_measurement():
+    from fake_pxa import FakePxa
+    from qick_interface.analyzer import AnalyzerError, KeysightAnalyzer
+    pxa = FakePxa(lambda f: -7.65, marker_x_mhz=149.4)  # the marker the lab PXA showed
+    analyzer = KeysightAnalyzer("127.0.0.1", pxa.port)
+    analyzer.prepare()
+
+    with pytest.raises(AnalyzerError, match="149.4 MHz"):
+        analyzer.peak_dbm(4900.0)

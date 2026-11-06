@@ -5,8 +5,10 @@ import pytest
 from qick import QickConfig
 
 from qick_interface.board import FakeBoard
+from qick_interface.fake_analyzer import FakeAnalyzer
 from qick_interface.measurements.resonator_sweep import ResonatorSweep
-from qick_interface.power import FULL_SCALE_COUNTS, BoardCalibration, calibrate_adc_from_loopback, load_board, save_board
+from qick_interface.power import (FULL_SCALE_COUNTS, BoardCalibration, calibrate_adc_from_loopback,
+                                  calibrate_dac_with_analyzer, load_board, save_board)
 
 SOCCFG = QickConfig(str(Path(__file__).parent / "fixtures" / "soccfg_rfsoc4x2.json"))
 
@@ -138,3 +140,32 @@ def test_the_loopback_cables_ripple_is_averaged_out():
 
     for f in (150.0, 575.0, 1234.0, 2050.0):
         assert new.adc_dbm("ADC_D", f, FULL_SCALE_COUNTS) == pytest.approx(5.5, abs=0.15)
+
+
+def dac_a_output(f_mhz):
+    """A made-up DAC_A: −0.5 dBm at gain 1, rolling off 1 dB per GHz."""
+    return -0.5 - f_mhz / 1000
+
+
+def test_the_analyzer_fills_the_dacs_table_every_50_mhz_with_the_cable_loss_added_back():
+    board = FakeBoard(SOCCFG, lambda program: [])
+    analyzer = FakeAnalyzer(board, {"DAC_A": dac_a_output}, cable_loss_db=0.7)
+
+    new = calibrate_dac_with_analyzer(board, analyzer, BoardCalibration(), "DAC_A", cable_loss_db=0.7)
+
+    table = new.dac_full_scale_dbm["DAC_A"]
+    f, dbm = np.array(table.points).T
+    assert f[0] == 50 and f[-1] == 4900 and np.all(np.diff(f) == 50)
+    assert dbm == pytest.approx(dac_a_output(f), abs=0.01)  # at gain 1, at the DAC's SMA
+    assert analyzer.model in table.source and "0.7 dB" in table.source
+    assert new.dac_full_scale_dbm["DAC_B"].source == "data sheet"  # the other DAC is untouched
+    assert board.playing is None  # nothing left playing
+
+
+def test_says_so_when_the_analyzer_sees_nothing_from_the_dac():
+    board = FakeBoard(SOCCFG, lambda program: [])
+    analyzer = FakeAnalyzer(board, {"DAC_B": dac_a_output})  # the cable is on DAC_B
+
+    with pytest.raises(ValueError, match="check the cable"):
+        calibrate_dac_with_analyzer(board, analyzer, BoardCalibration(), "DAC_A", cable_loss_db=0.0)
+    assert board.playing is None

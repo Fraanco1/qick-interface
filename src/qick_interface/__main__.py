@@ -8,7 +8,9 @@ import uvicorn
 
 from .board import BOARD_HOST, FakeBoard, QickBoard
 from .fake_scope import FakeScope
-from .lo import CxgLo
+from .analyzer import KeysightAnalyzer
+from .fake_analyzer import FakeAnalyzer
+from .lo import KeysightLo
 from .server import create_app
 
 FIXTURE = Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "soccfg_rfsoc4x2.json"
@@ -66,19 +68,24 @@ def main():
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--data", type=Path, default=Path("data"))
     parser.add_argument("--profiles", type=Path, default=Path("profiles"))
-    parser.add_argument("--lo", metavar="ADDRESS", help="IP address of the CXG LO; without it the LO is set by hand")
+    parser.add_argument("--analyzer", metavar="ADDRESS",
+                        help="IP address of the Keysight X-series signal analyzer (PXA), for the DAC calibration")
+    parser.add_argument("--lo", metavar="ADDRESS", help="IP address of the Keysight LO (EXG or CXG); without it the LO is set by hand")
     args = parser.parse_args()
 
     if args.fake:
         from qick import QickConfig
         board = FakeBoard(QickConfig(str(FIXTURE)), simulated_chip, round_time_s=0.3)
         scope = FakeScope(board, {"DAC_A": ("CH1", 0.0), "DAC_B": ("CH3", 1550.0)})  # Q 1.55 ns ahead
+        rolloff = lambda f: -0.8 - 0.4 * (f / 1000) ** 2  # DAC output at gain 1, dBm
+        analyzer = FakeAnalyzer(board, {"DAC_A": rolloff, "DAC_B": rolloff}, cable_loss_db=0.5)
     else:
         board = QickBoard(host=args.board)
         scope = board.scope()
+        analyzer = KeysightAnalyzer(args.analyzer) if args.analyzer else None
     host, _, port = (args.lo or "").partition(":")
-    lo = CxgLo(host, int(port or 5025)) if host else None
-    uvicorn.run(create_app(board, args.data, args.profiles, lo, scope), host=args.host, port=args.port)
+    lo = KeysightLo(host, int(port or 5025)) if host else None
+    uvicorn.run(create_app(board, args.data, args.profiles, lo, scope, analyzer), host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

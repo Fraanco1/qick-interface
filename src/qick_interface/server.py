@@ -7,11 +7,13 @@ from urllib.parse import unquote
 import Pyro4
 from fastapi import FastAPI, Header, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from .tone import OutputTone, tone_program
 from .iq_delay import measure as measure_iq_delay
-from .power import BoardCalibration, calibrate_adc_from_loopback, drive_hints, load_board, save_board
+from .power import (BoardCalibration, calibrate_adc_from_loopback, calibrate_dac_with_analyzer, drive_hints,
+                    load_board, save_board)
+from .scpi import ScpiError
 from .time_of_flight import measure as measure_time_of_flight
 from .frequency import FrequencyError
 from .lo import LoError
@@ -36,7 +38,7 @@ class RunRequest(BaseModel):
     params: dict
 
 
-def create_app(board, data_dir: Path, profiles_dir: Path, lo=None, scope=None) -> FastAPI:
+def create_app(board, data_dir: Path, profiles_dir: Path, lo=None, scope=None, analyzer=None) -> FastAPI:
     app = FastAPI(title="QICK interface")
     session = Session(board, MEASUREMENTS, data_dir, lo)
     app.state.session = session
@@ -199,6 +201,39 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None, scope=None) -
         except Busy as e:
             raise HTTPException(409, str(e))
         except (ValueError, KeyError) as e:
+            raise HTTPException(422, str(e))
+        save_board(profiles_dir, new)
+        board.calibration = new
+        return new.model_dump()
+
+    @app.get("/api/instruments")
+    def instruments():
+        """The instruments the app controls: the signal analyzer's model, or None without --analyzer."""
+        try:
+            model = analyzer.model if analyzer is not None else None
+        except ScpiError:
+            model = None
+        return {"analyzer": model, "lo": lo is not None}
+
+    class AnalyzerRequest(BaseModel):
+        dac: str = "DAC_A"
+        cable_loss_db: float = Field(0.0, ge=0, le=20)
+
+    @app.post("/api/board/dac-from-analyzer")
+    def dac_from_analyzer(req: AnalyzerRequest, x_client_id: str = Header()):
+        """The DAC's output at gain 1 measured on the signal analyzer; kept in profiles/board/calibration.json."""
+        if analyzer is None:
+            raise HTTPException(503, "No signal analyzer: start the app with --analyzer <its address>.")
+        if req.dac not in board.calibration.dac_full_scale_dbm:
+            raise HTTPException(422, f"No DAC called {req.dac}.")
+        try:
+            new = session.measure(x_client_id, lambda b: calibrate_dac_with_analyzer(
+                b, analyzer, b.calibration, req.dac, req.cable_loss_db), None)
+        except NotController as e:
+            raise HTTPException(403, str(e))
+        except Busy as e:
+            raise HTTPException(409, str(e))
+        except (ValueError, ScpiError) as e:
             raise HTTPException(422, str(e))
         save_board(profiles_dir, new)
         board.calibration = new

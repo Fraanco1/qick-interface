@@ -3,8 +3,8 @@
 All powers are at the board's SMA connectors, 50 Ω, at the IF (after any receive mixer, before any transmit
 mixer). Each DAC has a table of its output power at gain 1.0 (const pulse) against frequency; each ADC a table
 of its full-scale input power. The tables start from the data sheets (docs/research/converter-power-scale.md)
-and are replaced by measurements: the ADC from the loopback (calibrate_adc_from_loopback), both from a
-signal analyzer later (typed into the Board tab).
+and are replaced by measurements: a DAC's with a signal analyzer (calibrate_dac_with_analyzer), an ADC's from
+the loopback (calibrate_adc_from_loopback), or typed into the Board tab.
 """
 from datetime import date
 from pathlib import Path
@@ -25,6 +25,9 @@ LOOPBACK_POINTS = 401  # 5 MHz apart
 # so the table is a running mean over one period, sampled once per period.
 RIPPLE_MHZ = 100.0
 LOOPBACK_GAIN = 0.5
+DAC_CAL_MHZ = np.arange(50.0, 4900.0 + 1, 50.0)  # first Nyquist zone of the DACs (4915.2 MHz)
+DAC_CAL_GAIN = 1.0  # the table holds the output at gain 1: measured there, no scaling assumed
+NOTHING_DBM = -40.0  # a DAC at full scale gives about −1 dBm; below this the analyzer sees no tone
 
 
 class Table(BaseModel):
@@ -98,6 +101,31 @@ def calibrate_adc_from_loopback(board, calibration: BoardCalibration, dac: str, 
     table = Table(points=[(round(float(f), 1), round(float(p), 2)) for f, p in zip(centers[::n], mean[::n])],
                   source=f"loopback from {dac} ({calibration.dac_full_scale_dbm[dac].source}), {date.today()}")
     return calibration.model_copy(update={"adc_full_scale_dbm": {**calibration.adc_full_scale_dbm, adc: table}})
+
+
+def calibrate_dac_with_analyzer(board, analyzer, calibration: BoardCalibration, dac: str,
+                                cable_loss_db: float) -> BoardCalibration:
+    """The DAC's output at gain 1, a CW tone every 50 MHz read on a signal analyzer through a cable of
+    cable_loss_db. Returns a new calibration with that DAC's table replaced."""
+    from .profiles import SetupProfile
+    from .tone import OutputTone, tone_program
+
+    profile = SetupProfile(chip="DAC calibration", lo_mhz=None, readout_dac=dac)
+    points = []
+    analyzer.prepare()
+    try:
+        for f in DAC_CAL_MHZ:
+            board.play(tone_program(board.soccfg, profile, OutputTone(chip=profile.chip, rf_mhz=f, gain=DAC_CAL_GAIN)))
+            read = analyzer.peak_dbm(f)
+            if read < NOTHING_DBM:
+                raise ValueError(f"The analyzer sees almost nothing from {dac} at {f:g} MHz ({read:.1f} dBm); "
+                                 "check the cable from that DAC to the analyzer.")
+            points.append((float(f), round(read + cable_loss_db, 2)))
+    finally:
+        board.silence()
+        analyzer.release()
+    table = Table(points=points, source=f"{analyzer.model}, cable {cable_loss_db:g} dB, {date.today()}")
+    return calibration.model_copy(update={"dac_full_scale_dbm": {**calibration.dac_full_scale_dbm, dac: table}})
 
 
 def drive_hints(measurement, profile, params: dict, calibration: BoardCalibration) -> dict[str, str]:
