@@ -18,6 +18,7 @@ qick-interface/
 │   ├── tone.py                 # continuous tone for I/Q calibration
 │   ├── time_of_flight.py       # the Setup panel's Measure key: when a test pulse reaches the ADC
 │   ├── iq_delay.py             # the I/Q cal tab's Measure key: the Q DAC's lead over I, on the scope
+│   ├── iq_calibration.py       # the I/Q cal tab's Calibrate I/Q: Q delay, then Q phase and gain against IF, on the analyzer
 │   ├── power.py                # board calibration: DAC/ADC power scales (dBm); DAC with the analyzer, ADC from a loopback
 │   ├── fake_scope.py           # oscilloscope stand-in for --fake and tests
 │   ├── fake_analyzer.py        # signal analyzer stand-in for --fake and tests
@@ -62,7 +63,7 @@ Chip parameters (readout and qubit frequency and gain, π-pulse gain and σ) liv
 
 ### Tones (`iq.py`)
 
-Every program plays its tones and opens its readouts through `TonesMixin`. On the I/Q return path the I and Q readouts share one readout config and are triggered together, and `received_s21` combines them as Y_I + j·Y_Q after the RX calibration ([s21.md](s21.md)). For tones: on the real output path a tone is one pulse on one DAC; on the I/Q path it is the same pulse on the I and Q DACs with the profile's calibrated phase offset and gain ratio, both frequency-matched to the readout so they stay phase-locked.
+Every program plays its tones and opens its readouts through `TonesMixin`. On the I/Q return path the I and Q readouts share one readout config and are triggered together, and `received_s21` combines them as Y_I + j·Y_Q after the RX calibration ([s21.md](s21.md)). For tones: on the real output path a tone is one pulse on one DAC; on the I/Q path it is the same pulse on the I and Q DACs with the profile's calibrated phase offset and gain ratio (or, with an I/Q table, the values at the tone's IF; a sweep gets the straight line between its ends), both frequency-matched to the readout so they stay phase-locked.
 
 ### Measurements (`measurements/`)
 

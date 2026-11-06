@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from .tone import OutputTone, tone_program
 from .iq_delay import measure as measure_iq_delay
+from .iq_calibration import calibrate as calibrate_iq
 from .power import (DATASHEET_ADC, DATASHEET_DAC, CalibrationLibrary, calibrate_adc_from_loopback,
                     calibrate_dac_with_analyzer, drive_hints, load_board, save_board)
 from .scpi import ScpiError
@@ -248,6 +249,29 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None, scope=None, a
         except (ValueError, ScpiError) as e:
             raise HTTPException(422, str(e))
         return keep(req.dac, new.dac_full_scale_dbm[req.dac])
+
+    class IqCalibrationRequest(BaseModel):
+        profile: SetupProfile  # the setup as edited; the page fills the fields, Save setup keeps them
+        if_start_mhz: float = Field(50.0, gt=0)
+        if_stop_mhz: float = Field(3000.0, gt=0, le=4900)
+        if_step_mhz: float = Field(250.0, ge=10)
+
+    @app.post("/api/iq-calibration")
+    def iq_calibration(req: IqCalibrationRequest, x_client_id: str = Header()):
+        """The Q delay and the I/Q table (Q phase and gain against IF) measured on the signal analyzer."""
+        if analyzer is None:
+            raise HTTPException(503, "No signal analyzer: start the app with --analyzer <its address>.")
+        if req.if_stop_mhz <= req.if_start_mhz:
+            raise HTTPException(422, "The last IF must be above the first.")
+        try:
+            return session.measure(x_client_id, lambda b: calibrate_iq(
+                b, analyzer, req.profile, req.if_start_mhz, req.if_stop_mhz, req.if_step_mhz), req.profile)
+        except NotController as e:
+            raise HTTPException(403, str(e))
+        except Busy as e:
+            raise HTTPException(409, str(e))
+        except (ValueError, ScpiError, LoError, FrequencyError) as e:
+            raise HTTPException(422, str(e))
 
     @app.post("/api/drive-power")
     def drive_power(run: RunRequest):

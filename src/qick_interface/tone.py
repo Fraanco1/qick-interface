@@ -16,7 +16,8 @@ class OutputTone(BaseModel):
     chip: str
     rf_mhz: float
     gain: float = Field(0.3, ge=0, le=1)
-    # I/Q calibration being tuned; None uses the values saved in the setup profile
+    # I/Q calibration being tuned by hand; None uses the values saved in the setup profile. A setup with an
+    # I/Q table (from the analyzer) ignores them
     iq_phase_deg: float | None = Field(None, ge=0, le=180)
     iq_gain_ratio: float | None = Field(None, gt=0, le=2)
 
@@ -33,7 +34,7 @@ class _ToneProgram(TonesMixin, AveragerProgramV2):
 def tone_program(soccfg, profile: SetupProfile, tone: OutputTone):
     overrides = {k: v for k, v in (("iq_phase_deg", tone.iq_phase_deg), ("iq_gain_ratio", tone.iq_gain_ratio))
                  if v is not None}
-    tuned = profile.model_copy(update=overrides)
+    tuned = profile.model_copy(update=overrides if not profile.iq_table else {})
     plan = plan_sweep(tuned, tone.rf_mhz, tone.rf_mhz, drive_only=True)
     cfg = {"outputs": outputs(soccfg, tuned), "inputs": inputs(soccfg, profile), "freq": plan.if_start, "gain": tone.gain}
     return _ToneProgram(soccfg, reps=1, final_delay=1.0, cfg=cfg)

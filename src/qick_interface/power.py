@@ -236,7 +236,8 @@ def drive_hints(measurement, profile, params: dict, calibration: BoardCalibratio
         else:
             iq = profile.output_path == "iq"
             port = profile.i_dac if iq else profile.readout_dac
-            factor = 1 / max(1.0, profile.iq_gain_ratio) if iq else 1.0  # the I DAC's share on the I/Q path
+            ratios = [row[2] for row in profile.iq_table] or [profile.iq_gain_ratio]
+            factor = 1 / max(1.0, *ratios) if iq else 1.0  # the I DAC's share on the I/Q path
             try:
                 if_mhz = plan_sweep(profile, rf, rf, drive_only=line == "qubit").if_start
             except FrequencyError:

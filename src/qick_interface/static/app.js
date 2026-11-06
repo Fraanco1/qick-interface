@@ -437,7 +437,7 @@ const PROFILE_FIELDS = [
   ["iq_phase_deg", "Q phase offset", "number", "°", "90 for an ideal mixer.", "I/Q cal"],
   ["iq_gain_ratio", "Q / I gain", "number", null, "1 for an ideal mixer.", "I/Q cal"],
   ["iq_delay_ps", "Q delay", "number", "ps",
-    "How far the Q DAC runs ahead of the I DAC. It changes at every power-up of the board: Measure it with both DACs cabled to the oscilloscope (equal cables).", "I/Q cal"],
+    "How far the Q DAC runs ahead of the I DAC. It changes at every power-up of the board: Calibrate I/Q with the analyzer (below), or Measure it with both DACs cabled to the oscilloscope (equal cables).", "I/Q cal"],
   ["electrical_delay_ns", "Electrical delay", "number", "ns",
     "Subtracted from the resonator sweep's phase. Empty: fitted on each sweep. Store it from a wide sweep (Marker menu)."],
   ["time_of_flight_us", "Time of flight", "number", "µs",
@@ -456,7 +456,7 @@ const NUMBER_FIELDS = ["lo_power_dbm", "time_of_flight_us", "iq_phase_deg", "iq_
 
 const NEW_PROFILE = { chip: "", lo_mhz: null, lo_power_dbm: 13, sideband: "upper", output_path: "real",
   readout_dac: "DAC_B", i_dac: "DAC_A", q_dac: "DAC_B", iq_phase_deg: 90, iq_gain_ratio: 1, iq_delay_ps: 0, readout_adc: "ADC_D",
-  electrical_delay_ns: null, time_of_flight_us: 0.3, control_dac: null, return_path: "real", i_adc: "ADC_D", q_adc: "ADC_C", rx_gain_ratio: 1, rx_phase_deg: 0, rx_delay_ps: 0, calibrations: {} };
+  electrical_delay_ns: null, time_of_flight_us: 0.3, control_dac: null, return_path: "real", i_adc: "ADC_D", q_adc: "ADC_C", rx_gain_ratio: 1, rx_phase_deg: 0, rx_delay_ps: 0, calibrations: {}, iq_table: [] };
 
 // ---- the chip's setup: a panel over the screen, apart from the measurement's menus ----
 function renderSetupPanel() {
@@ -688,26 +688,32 @@ function setupMenu(menu) {
   });
   // onlyFor: "I/Q cal" (that menu only), "real"/"iq" (output path), "return:real"/"return:iq" (return path),
   // "lo" (only with an LO frequency)
-  const shown = (only) => {
+  // the setup's I/Q table (IF, Q phase, Q/I gain); a calibration fills it in until Save setup keeps it
+  let iqTable = current.iq_table ?? [], suppression = null;
+  const fromTable = (key) => iqTable.length && (key === "iq_phase_deg" || key === "iq_gain_ratio");
+  const shown = (only, key) => {
+    if (fromTable(key)) return false;
     if (menu === "I/Q cal") return only === "I/Q cal";
     if (!only) return true;
     if (only === "lo") return controls.lo_mhz.value !== "";
     if (only.startsWith("return:")) return only.slice(7) === controls.return_path.value;
     return only === controls.output_path.value;
   };
-  const showFields = () => { for (const row of Object.values(rows)) row.hidden = !shown(row.dataset.onlyFor); };
+  const showFields = () => { for (const [key, row] of Object.entries(rows)) row.hidden = !shown(row.dataset.onlyFor, key); };
   controls.output_path.onchange = showFields;
   controls.lo_mhz.oninput = showFields;
   controls.return_path.onchange = showFields;
   showFields();
   controls.iq_phase_deg.step = "0.1";
   controls.iq_gain_ratio.step = "0.005";
-  const extra = menu === "I/Q cal" ? [toneBlock(controls)] : [];
+  const iqBox = document.createElement("div"); iqBox.className = "iq-cal";
+  const extra = menu === "I/Q cal" ? [toneBlock(controls), iqBox] : [];
   const choices = menu === "Setup" ? calibrationChoices(current.calibrations ?? {}) : null;
 
   const formProfile = () => {
     const profile = Object.fromEntries(Object.entries(controls).map(([k, c]) => [k, c.value]));
     profile.calibrations = choices ? choices.value() : (current.calibrations ?? {});
+    profile.iq_table = iqTable;
     profile.lo_mhz = profile.lo_mhz === "" ? null : Number(profile.lo_mhz);
     profile.control_dac = profile.control_dac || null;
     profile.electrical_delay_ns = profile.electrical_delay_ns === "" ? null : Number(profile.electrical_delay_ns);
@@ -729,6 +735,62 @@ function setupMenu(menu) {
     measure.dataset.control = "1";
     rows[key].querySelector(".input-row").append(measure);
   };
+  // TX I/Q calibration on the signal analyzer (app started with --analyzer), and the table it fills in
+  const renderIqCal = () => {
+    const nodes = [];
+    const analyzer = state.instruments?.analyzer;
+    if (analyzer) {
+      const box = document.createElement("fieldset"); box.className = "tone";
+      const legend = document.createElement("legend"); legend.textContent = `Calibrate with the ${analyzer}`;
+      const number = (key, fallback) => {
+        const c = document.createElement("input"); c.type = "number"; c.step = "any"; c.inputMode = "decimal";
+        c.value = store.get(key, fallback); c.dataset.control = "1"; return c;
+      };
+      const from = number("iqCalFrom", 50), to = number("iqCalTo", 3000), step = number("iqCalStep", 250);
+      const go = button("Calibrate I/Q", async () => {
+        for (const [k, c] of [["iqCalFrom", from], ["iqCalTo", to], ["iqCalStep", step]]) store.set(k, c.value);
+        go.disabled = true;
+        message("Calibrating on the analyzer: the Q delay, then the Q phase and gain at each IF (a few minutes)…");
+        try {
+          const r = await api("POST", "/api/iq-calibration", { profile: formProfile(), if_start_mhz: Number(from.value),
+            if_stop_mhz: Number(to.value), if_step_mhz: Number(step.value) });
+          controls.iq_delay_ps.value = r.iq_delay_ps;
+          iqTable = r.iq_table; suppression = r.suppression;
+          const worst = Math.min(...r.suppression.map((x) => x.image_below_wanted_db));
+          message(`Q delay ${r.iq_delay_ps} ps; the image is at least ${worst} dB below the tone. Press Save setup to keep it.`);
+          renderIqCal(); showFields();
+        } catch (e) { message(e.message, true); }
+        finally { go.disabled = false; applyControl(); }
+      }, "key-strong");
+      go.dataset.control = "1";
+      const keys = document.createElement("div"); keys.className = "run-keys"; keys.append(go);
+      box.append(legend, field("First IF", from, "MHz"), field("Last IF", to, "MHz"), field("IF step", step, "MHz"), keys,
+        hint("Cable the mixer's RF output to the analyzer, with the LO on at the setup's frequency. Finds the " +
+          "Q delay, then the Q phase and gain that best suppress the image at each IF, and fills them in. " +
+          "Repeat after every power-up of the board: the Q delay changes."));
+      nodes.push(box);
+    }
+    if (iqTable.length) {
+      const table = document.createElement("table"); table.className = "iq-table";
+      const head = table.insertRow();
+      for (const h of ["IF (MHz)", "Q phase (°)", "Q / I gain", ...(suppression ? ["Image (dB below)"] : [])]) {
+        const th = document.createElement("th"); th.textContent = h; head.append(th);
+      }
+      iqTable.forEach(([f, ph, r], i) => {
+        const row = table.insertRow();
+        for (const v of [f, ph.toFixed(2), r.toFixed(4), ...(suppression ? [suppression[i].image_below_wanted_db] : [])])
+          row.insertCell().textContent = v;
+      });
+      const clear = button("Clear table", () => { iqTable = []; suppression = null; renderIqCal(); showFields(); });
+      clear.dataset.control = "1";
+      const keys = document.createElement("div"); keys.className = "setup-keys"; keys.append(clear);
+      nodes.push(table, keys, hint("Each tone takes the Q phase and gain at its IF (a sweep: a straight line between " +
+        "its ends), in place of Q phase offset and Q / I gain. Clear table to tune those by hand."));
+    }
+    iqBox.replaceChildren(...nodes);
+    applyControl();
+  };
+  if (menu === "I/Q cal") renderIqCal();
   measureKey("time_of_flight_us", "/api/time-of-flight", (r) => `Time of flight measured: ${r.time_of_flight_us} µs.`);
   measureKey("iq_delay_ps", "/api/iq-delay", (r) =>
     `Q delay measured: ${r.iq_delay_ps} ps (I on ${r.i_channel}, Q on ${r.q_channel}).`);

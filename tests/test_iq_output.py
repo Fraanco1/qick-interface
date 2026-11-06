@@ -124,3 +124,40 @@ def test_without_a_q_delay_i_and_q_play_the_same_envelope_at_the_same_time():
 
     assert start_ps(program, "qubit_q") == start_ps(program, "qubit")
     assert envelope(program, Q_GEN, "gauss") == pytest.approx(envelope(program, I_GEN, "gauss"))
+
+
+# ---- the Q phase and gain from a table against IF (TX I/Q calibration) ----
+TABLE = IQ.model_copy(update={"iq_table": [(100.0, 80.0, 0.9), (300.0, 100.0, 1.1)], "iq_phase_deg": 45.0})
+
+
+def q_over_i_gain(program, name, as_array=False):
+    return (np.asarray(program.get_pulse_param(name + "_q", "gain", as_array=as_array))
+            / np.asarray(program.get_pulse_param(name, "gain", as_array=as_array)))
+
+
+@pytest.mark.parametrize("if_mhz, phase, ratio", [(150.0, 85.0, 0.95), (200.0, 90.0, 1.0), (50.0, 80.0, 0.9),
+                                                  (400.0, 100.0, 1.1)])
+def test_a_tone_takes_the_q_phase_and_gain_of_the_table_at_its_if(if_mhz, phase, ratio):
+    # interpolated between the table's points and held beyond its ends; the single Q phase (45°) is unused
+    program = tone_program(SOCCFG, TABLE, OutputTone(chip="IQ", rf_mhz=if_mhz, gain=0.5))
+
+    assert q_minus_i_deg(program, "tone") == pytest.approx(phase, abs=0.01)
+    assert q_over_i_gain(program, "tone") == pytest.approx(ratio, abs=0.001)
+
+
+def test_a_sweep_follows_the_table_in_a_straight_line_between_its_ends():
+    params = ResonatorSweepParams(rf_start_mhz=120.0, rf_stop_mhz=280.0, points=9)
+
+    program, if_mhz, _ = ResonatorSweep.program(FakeBoard(SOCCFG, None), TABLE, params)
+
+    expected_phase = 80.0 + (np.asarray(if_mhz) - 100.0) * 0.1
+    assert q_minus_i_deg(program, "probe", as_array=True) == pytest.approx(expected_phase, abs=0.05)
+    assert q_over_i_gain(program, "probe", as_array=True) == pytest.approx(0.9 + (np.asarray(if_mhz) - 100.0) * 0.001, abs=0.002)
+    i_gain = np.asarray(program.get_pulse_param("probe", "gain", as_array=True))
+    assert np.ptp(i_gain) < 1e-4  # I keeps its gain along the sweep
+
+
+def test_the_tuning_keys_do_not_override_a_table():
+    program = tone_program(SOCCFG, TABLE, OutputTone(chip="IQ", rf_mhz=200.0, gain=0.5, iq_phase_deg=30.0))
+
+    assert q_minus_i_deg(program, "tone") == pytest.approx(90.0, abs=0.01)

@@ -12,6 +12,7 @@ share one readout config and are triggered together.
 from dataclasses import dataclass
 
 import numpy as np
+from qick.asm_v2 import QickParam
 
 from .board import gen_channel, readout_channel
 from .profiles import SetupProfile
@@ -24,6 +25,28 @@ class _Output:
     gain_factor: float
     phase_deg: float
     lead_ps: float = 0.0  # how far this DAC runs ahead of the I DAC; taken off its phase at each frequency
+    # Q from the TX I/Q table: (IFs, phases, gain factors) to interpolate at the tone's IF, in place of
+    # phase_deg and gain_factor
+    table: tuple | None = None
+
+    def phase_at(self, freq):
+        return self.phase_deg if self.table is None else along(self.table[0], self.table[1], freq)
+
+    def gain_at(self, freq):
+        return self.gain_factor if self.table is None else along(self.table[0], self.table[2], freq)
+
+
+def along(xs, ys, freq):
+    """ys interpolated at freq (held beyond the ends). A frequency sweep gets the straight line between the
+    values at its two ends: a QICK sweep can only change a pulse parameter linearly."""
+    if isinstance(freq, QickParam) and freq.is_sweep():
+        if len(freq.spans) != 1:
+            raise ValueError("An I/Q table can follow a sweep of one loop only.")
+        lo = freq.start
+        hi = lo + next(iter(freq.spans.values()))
+        y0, y1 = np.interp([lo, hi], xs, ys)
+        return float(y0) + (freq - lo) * float((y1 - y0) / (hi - lo))
+    return float(np.interp(float(freq), xs, ys))
 
 
 def outputs(soccfg, profile: SetupProfile) -> list[_Output]:
@@ -31,11 +54,16 @@ def outputs(soccfg, profile: SetupProfile) -> list[_Output]:
     the sign of the Q phase picks the sideband, and Q's lead over I (iq_delay_ps) is corrected."""
     if profile.output_path == "real":
         return [_Output("", gen_channel(soccfg, profile.readout_dac), 1.0, 0.0)]
-    r = profile.iq_gain_ratio
     sign = 1 if profile.sideband == "upper" else -1
+    q_gen = gen_channel(soccfg, profile.q_dac)
+    if profile.iq_table:
+        ifs, phases, ratios = (np.array(c, dtype=float) for c in zip(*profile.iq_table))
+        top = max(1.0, ratios.max())  # I keeps one gain for every IF; Q follows the table
+        return [_Output("", gen_channel(soccfg, profile.i_dac), 1 / top, 0.0),
+                _Output("_q", q_gen, 1.0, 0.0, profile.iq_delay_ps, table=(ifs, sign * phases, ratios / top))]
+    r = profile.iq_gain_ratio
     return [_Output("", gen_channel(soccfg, profile.i_dac), 1 / max(1.0, r), 0.0),
-            _Output("_q", gen_channel(soccfg, profile.q_dac), r / max(1.0, r), sign * profile.iq_phase_deg,
-                    profile.iq_delay_ps)]
+            _Output("_q", q_gen, r / max(1.0, r), sign * profile.iq_phase_deg, profile.iq_delay_ps)]
 
 
 def tone_gain(program, name: str):
@@ -101,9 +129,15 @@ class TonesMixin:
                              name: [whole(lag / cycle) * cycle * 1e-6 for lag, cycle in self._lags(cfg[line])]}
         for out in cfg[line]:
             # a DAC running τ ahead adds 360°·f·τ; freq may be a sweep, and the phase then sweeps with it
-            phase = out.phase_deg - freq * (360e-6 * out.lead_ps) if out.lead_ps else out.phase_deg
+            phase = out.phase_at(freq)
+            if out.lead_ps:
+                phase = phase - freq * (360e-6 * out.lead_ps)
+            factor = out.gain_at(freq)
+            if isinstance(factor, QickParam) and isinstance(gain, QickParam) and gain.is_sweep():
+                raise ValueError("With an I/Q table, a sweep can't change the gain and the IF together.")
             self.add_pulse(ch=out.gen, name=name + out.suffix, ro_ch=cfg["inputs"][0], freq=freq,
-                           phase=phase, gain=gain * out.gain_factor, **pulse_args)
+                           phase=phase, gain=gain * factor if not isinstance(factor, QickParam) else factor * gain,
+                           **pulse_args)
 
     def _lags(self, outs):
         """For each output: how much later it must play to line up with the slowest DAC (ps), and its

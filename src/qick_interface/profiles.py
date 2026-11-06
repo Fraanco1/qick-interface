@@ -23,6 +23,9 @@ class SetupProfile(BaseModel):
     # How far the Q DAC's output runs ahead of the I DAC's (ps). The DACs sit on different converter tiles,
     # whose delay is set anew at every power-up; measured with the scope (docs/research/dac-tile-sync.md)
     iq_delay_ps: float = Field(0.0, ge=-10000, le=10000)
+    # TX I/Q calibration on the signal analyzer: (IF MHz, Q phase °, Q/I gain), by IF. When it is filled in,
+    # it replaces iq_phase_deg and iq_gain_ratio: each tone takes the values at its IF (iq.py)
+    iq_table: list[tuple[float, float, float]] = []
     return_path: Literal["real", "iq"] = "real"
     i_adc: str = "ADC_D"  # used by the I/Q return path
     q_adc: str = "ADC_C"
@@ -47,6 +50,15 @@ class SetupProfile(BaseModel):
         if isinstance(data, dict):
             data = {k: v for k, v in data.items() if k != "chip_type"}
         return data
+
+    @model_validator(mode="after")
+    def _iq_table_by_if(self):
+        ifs = [row[0] for row in self.iq_table]
+        if ifs != sorted(set(ifs)):
+            raise ValueError("The I/Q table needs each IF once, in increasing order.")
+        if any(not 0 < row[2] <= 2 for row in self.iq_table):
+            raise ValueError("The I/Q table's Q/I gains must be between 0 and 2.")
+        return self
 
     @model_validator(mode="after")
     def _control_line_has_its_own_dac(self):

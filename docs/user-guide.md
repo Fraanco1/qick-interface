@@ -57,9 +57,25 @@ The app checks every frequency against the setup before running. For example, it
 
 An I/Q mixer also produces an *image* on the other side of the LO. With an uncalibrated MMIQ-0416LS it is only 25–30 dB weaker. Calibrating removes most of it.
 
+### With the signal analyzer (app started with `--analyzer`)
+
+Do this after every power-up of the board, because the Q delay changes, and after any change to the LO frequency or power.
+
+1. In the chip's **Setup**: Output path I/Q, I and Q outputs, LO frequency and sideband. Without `--lo`, set the LO by hand to that frequency (13 dBm, RF on).
+2. Cable the mixer's RF output to the signal analyzer.
+3. In the **I/Q cal** tab, under **Calibrate with the …**, set **First IF**, **Last IF** and **IF step** (default 50–3000 MHz every 250 MHz), and press **Calibrate I/Q** (a few minutes). The app:
+   - finds the **Q delay** from how the best Q phase changes with IF (at IFs that double from 50 MHz);
+   - then, at each IF of the grid, finds the **Q phase** and **Q / I gain** that best suppress the image;
+   - fills in the Q delay and a table (IF, Q phase, Q / I gain, and how far the image is below the tone).
+4. Press **Save setup**, and cable the mixer back to the cryostat.
+
+With a table, each tone takes the Q phase and gain at its IF, interpolated between the table's points. A frequency sweep follows a straight line between the values at its two ends. The table replaces **Q phase offset** and **Q / I gain**, which are hidden; **Clear table** brings them back for tuning by hand. On the bench (2026-11-06) a table brought the image 61–70 dB below the tone at every IF from 50 MHz to 3 GHz, against 33–46 dB for a single phase and gain.
+
+### By hand
+
 **First, after every power-up of the board: the Q delay.** The I and Q DACs start with a delay between them that changes at every power-up (1.55 ns on one, 3.30 ns on the next; restarting the service keeps it). Uncorrected, it turns into a Q phase error that grows with the IF (54° at 100 MHz for 1.5 ns), so a calibration made at one frequency would not hold across a sweep. Cable both DACs to the oscilloscope with two equal cables, press **Measure** next to **Q delay** in the I/Q cal tab (about 25 s), then **Save setup**. The app finds which scope channels they are on, and from then on corrects the Q phase at every frequency and the timing of every pulse: the DAC that runs ahead starts later. Gaussians and Gaussian edges are aligned exactly; flat pulses to the nearest 1.6 ns clock cycle. Uncorrected, 3 ns of skew on a σ = 20 ns Gaussian would put about −25 dB of the pulse into the image, which the I/Q calibration (a steady tone) cannot remove. The measurement changes the scope's settings and puts them back afterwards.
 
-Then:
+Then, with no table:
 
 1. Connect the mixer's RF output to a spectrum analyzer (or the PNA-X in spectrum mode).
 2. Press **Setup**, open its **I/Q cal** tab, enter a **Frequency** inside the band you will measure (e.g. the readout frequency), and press **Tone on**.

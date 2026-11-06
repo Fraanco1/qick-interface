@@ -774,3 +774,36 @@ def test_a_marker_outside_the_span_stops_the_measurement():
 
     with pytest.raises(AnalyzerError, match="149.4 MHz"):
         analyzer.peak_dbm(4900.0)
+
+
+# ---- TX I/Q calibration on the signal analyzer ----
+TRANSMON = {"chip": "Transmon", "lo_mhz": 5000.0, "output_path": "iq", "i_dac": "DAC_A", "q_dac": "DAC_B"}
+IQ_CAL = {"profile": TRANSMON, "if_start_mhz": 50.0, "if_stop_mhz": 1000.0, "if_step_mhz": 250.0}
+
+
+def test_the_iq_calibration_needs_an_analyzer(client):
+    client.post("/api/control", headers=as_client("alice"))
+
+    response = client.post("/api/iq-calibration", json=IQ_CAL, headers=as_client("alice"))
+
+    assert response.status_code == 503 and "--analyzer" in response.text
+
+
+def test_the_iq_calibration_measures_the_setup_as_edited_and_leaves_saving_to_the_user(tmp_path):
+    from qick_interface.fake_analyzer import FakeIqMixer
+    board = FakeBoard(SOCCFG, flat_response)
+    app = create_app(board, data_dir=tmp_path / "data", profiles_dir=tmp_path / "profiles",
+                     analyzer=FakeIqMixer(board, 5000.0, q_lead_ps=1500.0))
+    with TestClient(app) as client:
+        assert client.post("/api/iq-calibration", json=IQ_CAL, headers=as_client("bob")).status_code == 403
+        client.post("/api/control", headers=as_client("alice"))
+
+        result = client.post("/api/iq-calibration", json=IQ_CAL, headers=as_client("alice")).json()
+
+        assert result["iq_delay_ps"] == pytest.approx(1500, abs=5)
+        assert [row[0] for row in result["iq_table"]] == [50.0, 300.0, 550.0, 800.0, 1000.0]
+        assert all(r["image_below_wanted_db"] > 50 for r in result["suppression"])
+        assert client.get("/api/profiles").json() == {}  # Save setup keeps it
+        saved = client.put("/api/profiles/Transmon", json={**TRANSMON, "iq_delay_ps": result["iq_delay_ps"],
+                            "iq_table": result["iq_table"]}, headers=as_client("alice"))
+        assert saved.status_code == 200

@@ -87,9 +87,11 @@
               <li>Frequencies you type are RF, in MHz. On a control line the qubit frequency is the DAC's own (no
                 mixer, up to 4915 MHz).</li>
             </ul></li>
-          <li><b>I/Q chips only: calibrate the mixers.</b> After every board power-up, <b>Setup → I/Q cal → Measure</b>
-            the Q delay (both DACs on the scope). Then <b>Tone on</b> and adjust Q phase and Q / I gain until the image
-            on the spectrum analyzer is smallest; save. With an I/Q return, run <b>RX I/Q calibration</b> and press
+          <li><b>I/Q chips only: calibrate the mixers.</b> After every board power-up, cable the mixer's RF output to
+            the signal analyzer and press <b>Setup → I/Q cal → Calibrate I/Q</b> (a few minutes): it fills in the Q
+            delay and a table of Q phase and gain against IF; press <b>Save setup</b>. Without the analyzer:
+            <b>Measure</b> the Q delay (both DACs on the scope), then <b>Tone on</b> and adjust Q phase and Q / I gain
+            until the image is smallest; save. With an I/Q return, run <b>RX I/Q calibration</b> and press
             <b>Marker → Store in setup: RX calibration</b>.</li>
           <li><b>Find the resonator.</b> <b>Resonator sweep</b>: set Start and Stop, <b>Run sweep</b>. Once per setup,
             run a wide sweep and press <b>Marker → Store in setup: electrical delay</b>. Then <b>Marker → Min</b> and

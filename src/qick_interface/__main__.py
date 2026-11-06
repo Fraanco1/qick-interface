@@ -9,7 +9,7 @@ import uvicorn
 from .board import BOARD_HOST, FakeBoard, QickBoard
 from .fake_scope import FakeScope
 from .analyzer import KeysightAnalyzer
-from .fake_analyzer import FakeAnalyzer
+from .fake_analyzer import FakeAnalyzer, FakeIqMixer, FakeLo
 from .lo import KeysightLo
 from .server import create_app
 
@@ -78,13 +78,17 @@ def main():
         board = FakeBoard(QickConfig(str(FIXTURE)), simulated_chip, round_time_s=0.3)
         scope = FakeScope(board, {"DAC_A": ("CH1", 0.0), "DAC_B": ("CH3", 1550.0)})  # Q 1.55 ns ahead
         rolloff = lambda f: -0.8 - 0.4 * (f / 1000) ** 2  # DAC output at gain 1, dBm
-        analyzer = FakeAnalyzer(board, {"DAC_A": rolloff, "DAC_B": rolloff}, cable_loss_db=0.5)
+        direct = FakeAnalyzer(board, {"DAC_A": rolloff, "DAC_B": rolloff}, cable_loss_db=0.5)
+        fake_lo = FakeLo()
+        # an I/Q mixer on DAC_A/DAC_B (Q 1.55 ns ahead, a few degrees and percent off) into the analyzer
+        analyzer = FakeIqMixer(board, fake_lo, q_lead_ps=1550.0, phase_error_deg=lambda f: -4.0 + 1.5 * np.sin(f / 700),
+                               gain_error=lambda f: 1.0 + 0.08 * (f / 3000) ** 2, dbm_at=rolloff, direct=direct)
     else:
         board = QickBoard(host=args.board)
         scope = board.scope()
         analyzer = KeysightAnalyzer(args.analyzer) if args.analyzer else None
     host, _, port = (args.lo or "").partition(":")
-    lo = KeysightLo(host, int(port or 5025)) if host else None
+    lo = KeysightLo(host, int(port or 5025)) if host else (fake_lo if args.fake else None)
     uvicorn.run(create_app(board, args.data, args.profiles, lo, scope, analyzer), host=args.host, port=args.port)
 
 
