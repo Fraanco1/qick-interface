@@ -50,6 +50,12 @@ DAC_B (Q) ─┘
 - One LO serves both tones (upper sideband). For example, with the LO at 6.0 GHz: readout at about 7 GHz (IF ≈ 1.0 GHz, under the ADC's 2.21 GHz), qubit at about 10 GHz (IF ≈ 4.0 GHz, under the DAC's 4.9 GHz; the DAC's own roll-off costs about 2.4 dB there). The MMIQ accepts LO 4–16 GHz and IF up to 6 GHz.
 - The mixer accepts LO 4–16 GHz at 7–16 dBm (13 dBm nominal) and IF from DC to 6 GHz. Datasheet notes: [mixer-mmiq-0416ls.md](research/mixer-mmiq-0416ls.md).
 - Run the [I/Q calibration](user-guide.md#iq-calibration-iq-chips-only) after any change to the LO frequency or power.
+- **Measured 2026-11-06** (MMIQ-0416LS, LO 5000 MHz at 13 dBm set by hand on the EXG, tone gain 0.5, RF to the PXA; scripts `C:\qick-setup\iq_char.py` and `iq_verify.py` on the lab PC, results in `iq_char.json`):
+  - With the Q delay at 0 the sideband came out flipped at IF 1 GHz and with no suppression at IF 500 MHz: DAC_B (Q) ran **1500 ps** ahead of DAC_A on that boot. With 1500 ps the best Q phase is flat with IF (84–87° from 50 MHz to 3 GHz; fitted delay error −0.7 ps).
+  - Optimised separately at each IF, the image is 61–70 dB down. The best Q/I gain is 0.98–1.01 up to 1 GHz and falls to 0.91 at 3 GHz.
+  - One setting for all IFs (phase **85.7°**, Q/I gain **0.995**, delay 1500 ps; saved in the Transmon setup): image 43–46 dB below the wanted tone for IF 50–700 MHz, 33–39 dB for 1–3 GHz.
+  - Wanted tone −12.5 dBm at IF 50 MHz to −16.8 dBm at 3 GHz (DAC roll-off); LO leakage about −56 dBm at every IF.
+  - The Q delay changes at every power-up of the board (see [dac-tile-sync.md](research/dac-tile-sync.md)): measure it again after each one.
 - The return path is a real mixer into one ADC. An [I/Q return path](#iq-return-path) (two ADCs) is available; the board side is checked, but not yet with a real I/Q mixer.
 
 ### Fluxonium: real mixers, separate control line
