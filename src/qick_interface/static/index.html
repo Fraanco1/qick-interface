@@ -68,12 +68,14 @@
               <li><b>DAC, with the signal analyzer</b> (app started with <code>--analyzer</code>): cable the DAC to
                 the analyzer's RF input, pick it under <b>Signal analyzer</b>, type the <b>Cable loss</b>, press
                 <b>Calibrate DAC with analyzer</b> (about a minute; every 50 MHz from 50 to 4900 MHz). Repeat for
-                the other DAC. Without an analyzer, type measured values into its <b>output at gain 1</b> table
-                (one "MHz dBm" per line), set <b>Source</b>, press <b>Save board</b>.</li>
+                the other DAC. Without an analyzer, pick <b>New table</b> in its list, type measured values (one
+                "MHz dBm" per line) and a name, press <b>Save table</b>.</li>
               <li><b>ADC, from a loopback:</b> cable a DAC to an ADC with a short cable, pick them in <b>From DAC</b>
                 and <b>To ADC</b>, press <b>Calibrate ADC from loopback</b> (a few seconds).</li>
             </ol>
-            Until then both use the data sheets. Shared by every chip.</li>
+            Each result is added as a new table; older ones are kept. Shared by every chip; each chip's Setup picks
+            the table every port uses under <b>Power calibration</b> (Newest by default, Data sheet, a saved one,
+            or None for dBFS).</li>
           <li><b>Set up the chip.</b> Press <b>Setup</b>: chip name, LO frequency (empty with no mixer) and sideband,
             output and return path (Real or I/Q) with their DACs and ADCs, and a <b>Control line</b> if the qubit tone
             has its own DAC (fluxonium). Press <b>Measure</b> next to <b>Time of flight</b>, then <b>Save setup</b>.
@@ -136,8 +138,8 @@
           <dd>Click a trace to place it. <b>Min</b>, <b>Max</b>, and keys that store the value in the chip's
             parameters.</dd>
           <dt>Setup → Board</dt>
-          <dd>The power calibration of the DACs and ADCs (step 2), behind the dBm units and the drive power
-            hints.</dd>
+          <dd>The power calibration tables of the DACs and ADCs (step 2), behind the dBm units and the drive power
+            hints. A chip picks its tables in Setup → Power calibration.</dd>
         </dl>
       </div>
     </section>

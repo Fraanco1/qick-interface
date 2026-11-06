@@ -144,9 +144,9 @@ class Oscilloscope:
             adcs.append(params.channel_2)
         programs = [cls.program(board.soccfg, profile, params, adc) for adc in adcs]
         fs = board.soccfg["readouts"][programs[0].cfg["inputs"][0]]["fs"]
-        # counts → mV at the ADC's SMA, from its calibration at the readout frequency
-        mv = [board.calibration.adc_volts_per_count(adc, params.readout_freq_mhz) * FULL_SCALE_COUNTS
-              / RAW_FULL_SCALE * 1e3 for adc in adcs]
+        # counts → mV at the ADC's SMA (% FS uncalibrated), from its calibration at the readout frequency
+        mv = [board.calibration.adc_linear_per_count(adc, params.readout_freq_mhz) * FULL_SCALE_COUNTS
+              / RAW_FULL_SCALE for adc in adcs]
         i, last = 0, -cls.MIN_REDRAW_S
         while not should_stop():
             time.sleep(max(0.0, last + cls.MIN_REDRAW_S - time.monotonic()))

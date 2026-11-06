@@ -36,6 +36,9 @@ class SetupProfile(BaseModel):
     control_dac: Literal["DAC_A", "DAC_B"] | None = None
     # From the trigger to when the tone reaches the ADC: cables, chip and the board's own latency
     time_of_flight_us: float = Field(0.3, ge=0, le=10)
+    # The board calibration table each port uses (power.CalibrationLibrary): a table's name, "data sheet" or
+    # "none" (dBFS). A port left out uses its newest table.
+    calibrations: dict[Literal["DAC_A", "DAC_B", "ADC_B", "ADC_C", "ADC_D"], str] = {}
 
     @model_validator(mode="before")
     @classmethod

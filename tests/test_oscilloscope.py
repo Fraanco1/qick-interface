@@ -59,7 +59,7 @@ def test_millivolts_follow_the_adc_calibration():
     last = updates(FakeBoard(SOCCFG, sine_arriving()), LOOPBACK, OscilloscopeParams(**BASE, readout_pulse_us=1.0))[-1]
 
     # a full-scale tone reads 32768 raw counts, and FULL_SCALE_COUNTS after the readout's downconversion
-    mv_per_count = BoardCalibration().adc_volts_per_count("ADC_C", 500.0) * FULL_SCALE_COUNTS / 32768 * 1e3
+    mv_per_count = BoardCalibration().adc_linear_per_count("ADC_C", 500.0) * FULL_SCALE_COUNTS / 32768
     assert last.traces["Channel 1 (mV)"] == pytest.approx(last.traces["Channel 1"] * mv_per_count)
 
 

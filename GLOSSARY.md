@@ -62,6 +62,10 @@ _Avoid_: config, preset, setup
 The values measured on one chip that later measurements start from, such as readout frequency, qubit frequency and π-pulse amplitude.
 _Avoid_: calibration (reserved for I/Q calibration), chip config, qubit params
 
+**Board calibration table**:
+One port's power scale against frequency (a DAC's output at gain 1, or an ADC's full-scale input, in dBm at the board's SMA), measured or from the data sheet. The board keeps every table of each port; the setup profile picks one per port, or none (dBFS).
+_Avoid_: power calibration file, cal set
+
 **I/Q calibration**:
 The Q phase offset and Q/I gain ratio that best suppress the image of an I/Q output path (the TX side); part of the setup profile, tuned by hand with a spectrum analyzer.
 _Avoid_: mixer correction, IQ balance

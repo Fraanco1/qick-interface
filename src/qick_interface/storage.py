@@ -11,8 +11,9 @@ from .measurements.base import Update
 
 
 def save_run(data_dir: Path, measurement: str, profile, params, update: Update,
-             completed: bool) -> str:
-    """Write the run's arrays and metadata; returns the path relative to data_dir, without suffix."""
+             completed: bool, calibration: dict[str, str] | None = None) -> str:
+    """Write the run's arrays and metadata; returns the path relative to data_dir, without suffix.
+    calibration: the board calibration table each port used (BoardCalibration.sources())."""
     now = datetime.now()
     chip = re.sub(r"[^\w.-]+", "_", profile.chip)
     rel = Path(now.strftime("%Y-%m-%d")) / f"{now:%H%M%S}_{measurement}_{chip}"
@@ -31,6 +32,7 @@ def save_run(data_dir: Path, measurement: str, profile, params, update: Update,
         "rounds": update.rounds,
         "profile": profile.model_dump(),
         "params": params.model_dump(),
+        "calibration": calibration,
         "arrays": ["x", *update.traces, *update.raw],
         "versions": {"qick": version("qick"), "qick-interface": version("qick-interface")},
     }, indent=2))

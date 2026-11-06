@@ -7,8 +7,8 @@ from qick import QickConfig
 from qick_interface.board import FakeBoard
 from qick_interface.fake_analyzer import FakeAnalyzer
 from qick_interface.measurements.resonator_sweep import ResonatorSweep
-from qick_interface.power import (FULL_SCALE_COUNTS, BoardCalibration, calibrate_adc_from_loopback,
-                                  calibrate_dac_with_analyzer, load_board, save_board)
+from qick_interface.power import (FULL_SCALE_COUNTS, BoardCalibration, CalibrationLibrary, Table,
+                                  calibrate_adc_from_loopback, calibrate_dac_with_analyzer, load_board, save_board)
 
 SOCCFG = QickConfig(str(Path(__file__).parent / "fixtures" / "soccfg_rfsoc4x2.json"))
 
@@ -31,9 +31,10 @@ def test_interpolates_between_table_points_and_holds_beyond_the_ends():
 
 def test_a_full_scale_tone_is_the_full_scale_power_in_volts():
     cal = BoardCalibration()
-    volts = FULL_SCALE_COUNTS * cal.adc_volts_per_count("ADC_D", 550.0)
+    mv = FULL_SCALE_COUNTS * cal.adc_linear_per_count("ADC_D", 550.0)
 
-    assert 10 * np.log10(volts ** 2 / (2 * 50) * 1000) == pytest.approx(3.0)
+    assert 10 * np.log10((mv / 1e3) ** 2 / (2 * 50) * 1000) == pytest.approx(3.0)
+    assert cal.adc_units("ADC_D") == ("dBm", "mV")
 
 
 def test_the_loopback_finds_the_adc_scale_from_the_dacs():
@@ -60,13 +61,78 @@ def test_says_so_when_the_loopback_is_not_cabled():
 
 
 def test_is_kept_in_the_profiles_folder(tmp_path):
-    cal = BoardCalibration()
-    cal.adc_full_scale_dbm["ADC_D"].points = [(100.0, 5.0), (2000.0, 4.0)]
+    library, _ = CalibrationLibrary().add("ADC_D", Table(points=[(100.0, 5.0), (2000.0, 4.0)], source="loopback"))
 
-    save_board(tmp_path, cal)
+    save_board(tmp_path, library)
 
-    assert load_board(tmp_path).adc_dbm("ADC_D", 100.0, FULL_SCALE_COUNTS) == pytest.approx(5.0)
-    assert load_board(tmp_path / "empty").dac_full_scale_dbm["DAC_B"].source == "data sheet"
+    assert load_board(tmp_path).resolve({}).adc_dbm("ADC_D", 100.0, FULL_SCALE_COUNTS) == pytest.approx(5.0)
+    assert load_board(tmp_path / "empty").resolve({}).dac_full_scale_dbm["DAC_B"].source == "data sheet"
+
+
+# ---- the library of tables: every port keeps all of its calibrations, a chip's setup picks one per port ----
+PXA_OLD = Table(points=[(100.0, -2.0)], source="N9032B, cable 0.5 dB, 2026-11-05")
+PXA_NEW = Table(points=[(100.0, -1.5)], source="N9032B, cable 0.5 dB, 2026-11-06")
+
+
+def test_a_port_with_no_choice_uses_its_newest_table_or_the_data_sheet():
+    library = CalibrationLibrary()
+    library, _ = library.add("DAC_A", PXA_OLD)
+    library, _ = library.add("DAC_A", PXA_NEW)
+
+    cal = library.resolve({})
+
+    assert cal.dac_full_scale_dbm["DAC_A"].source == PXA_NEW.source
+    assert cal.dac_full_scale_dbm["DAC_B"].source == "data sheet"
+
+
+def test_a_chip_can_pick_an_older_table_or_the_data_sheet():
+    library, _ = CalibrationLibrary().add("DAC_A", PXA_OLD)
+    library, _ = library.add("DAC_A", PXA_NEW)
+
+    assert library.resolve({"DAC_A": PXA_OLD.source}).dac_dbm("DAC_A", 100.0, 1.0) == pytest.approx(-2.0)
+    assert library.resolve({"DAC_A": "data sheet"}).dac_dbm("DAC_A", 550.0, 1.0) == pytest.approx(-1.0)
+
+
+def test_no_calibration_gives_powers_relative_to_full_scale():
+    cal = CalibrationLibrary().resolve({"DAC_B": "none", "ADC_D": "none"})
+
+    assert cal.dac_dbm("DAC_B", 1234.0, 0.5) == pytest.approx(-6.02, abs=0.01)  # dBFS: gain 1 is 0
+    assert cal.adc_dbm("ADC_D", 1234.0, FULL_SCALE_COUNTS) == pytest.approx(0.0)
+    assert cal.adc_units("ADC_D") == ("dBFS", "% FS")
+    assert FULL_SCALE_COUNTS * cal.adc_linear_per_count("ADC_D", 1234.0) == pytest.approx(100.0)
+    assert cal.dac_full_scale_dbm["DAC_B"].unit == "dBFS"
+    assert cal.adc_units("ADC_C") == ("dBm", "mV")  # the others keep theirs
+
+
+def test_a_choice_that_is_gone_says_which_port():
+    with pytest.raises(ValueError, match="ADC_D"):
+        CalibrationLibrary().resolve({"ADC_D": "loopback, deleted since"})
+
+
+def test_a_new_table_never_replaces_an_older_one_with_the_same_name():
+    library, first = CalibrationLibrary().add("DAC_A", PXA_NEW)
+    library, second = library.add("DAC_A", PXA_NEW.model_copy(update={"points": [(100.0, -1.4)]}))
+
+    assert first == PXA_NEW.source and second == f"{PXA_NEW.source} (2)"
+    assert [t.source for t in library.dac["DAC_A"]] == [first, second]
+
+
+def test_a_table_cannot_take_a_built_in_name():
+    with pytest.raises(ValueError):
+        CalibrationLibrary(adc={"ADC_D": [Table(points=[(100.0, 5.0)], source="none")]})
+
+
+def test_the_one_table_per_port_file_becomes_a_library(tmp_path):
+    # the format before 2026-11-06: one table per port, the data sheet's included
+    old = BoardCalibration()
+    old.adc_full_scale_dbm["ADC_D"] = Table(points=[(100.0, 5.5)], source="loopback from DAC_A, 2026-11-06")
+    (tmp_path / "board").mkdir()
+    (tmp_path / "board" / "calibration.json").write_text(old.model_dump_json())
+
+    library = load_board(tmp_path)
+
+    assert [t.source for t in library.adc["ADC_D"]] == ["loopback from DAC_A, 2026-11-06"]
+    assert library.dac["DAC_A"] == [] and library.adc["ADC_B"] == []  # the data sheet is built in
 
 
 # ---- absolute traces from the measurements ----
@@ -120,7 +186,7 @@ def test_on_the_iq_return_each_adc_sees_half_of_the_combined_signal():
 def test_rabi_signal_also_comes_in_millivolts_at_the_adc():
     u = last_update(Rabi, RabiParams(qubit_freq_mhz=300.0, readout_freq_mhz=700.0, readout_gain=0.4, points=31,
                                      rounds=1), LOOP)
-    mv_per_unit = 0.4 * MEASURED.adc_volts_per_count("ADC_D", 700.0) * 1e3
+    mv_per_unit = 0.4 * MEASURED.adc_linear_per_count("ADC_D", 700.0)
 
     assert u.traces["Signal (mV)"] == pytest.approx(u.traces["Signal"] * mv_per_unit, rel=1e-3)
     assert u.traces["Fit (mV)"] == pytest.approx(u.traces["Fit"] * mv_per_unit, rel=1e-3, nan_ok=True)

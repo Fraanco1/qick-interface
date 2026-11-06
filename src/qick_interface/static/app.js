@@ -333,7 +333,8 @@ function scaleMenu() {
   units.value = store.get("units", "relative");
   units.onchange = () => setUnits(units.value);
   const head = [field("Units", units, null,
-    "Absolute: power at the ADC input, from the board calibration (Setup → Board). Phase is unchanged."),
+    "Absolute: power at the ADC input, from the calibration the chip's Setup picks for it (dBFS and % of full " +
+    "scale with no calibration). Phase is unchanged."),
     ...horizontalMenu()];
   return [...head, ...plotDefs().flatMap((def, k) => {
     const s = scaleOf(k), title = document.createElement("h3");
@@ -455,7 +456,7 @@ const NUMBER_FIELDS = ["lo_power_dbm", "time_of_flight_us", "iq_phase_deg", "iq_
 
 const NEW_PROFILE = { chip: "", lo_mhz: null, lo_power_dbm: 13, sideband: "upper", output_path: "real",
   readout_dac: "DAC_B", i_dac: "DAC_A", q_dac: "DAC_B", iq_phase_deg: 90, iq_gain_ratio: 1, iq_delay_ps: 0, readout_adc: "ADC_D",
-  electrical_delay_ns: null, time_of_flight_us: 0.3, control_dac: null, return_path: "real", i_adc: "ADC_D", q_adc: "ADC_C", rx_gain_ratio: 1, rx_phase_deg: 0, rx_delay_ps: 0 };
+  electrical_delay_ns: null, time_of_flight_us: 0.3, control_dac: null, return_path: "real", i_adc: "ADC_D", q_adc: "ADC_C", rx_gain_ratio: 1, rx_phase_deg: 0, rx_delay_ps: 0, calibrations: {} };
 
 // ---- the chip's setup: a panel over the screen, apart from the measurement's menus ----
 function renderSetupPanel() {
@@ -466,7 +467,7 @@ function renderSetupPanel() {
   const iq = state.profiles[chip]?.output_path === "iq";
   const tabs = ["Setup", ...(iq ? ["I/Q cal"] : []), "Board"];
   if (!tabs.includes(state.setupTab)) state.setupTab = "Setup";
-  $("setup-title").textContent = state.setupTab === "Board" ? "Board calibration (every chip)"
+  $("setup-title").textContent = state.setupTab === "Board" ? "Board calibration tables (every chip)"
     : chip ? `Setup of ${chip}` : "New chip";
   $("setup-tabs").replaceChildren(...(tabs.length > 1 ? tabs : []).map((name) => {
     const b = document.createElement("button");
@@ -493,69 +494,132 @@ function parsePoints(text) {
   return points.sort((a, b) => a[0] - b[0]);
 }
 
+const PORTS = { dac: ["DAC_A", "DAC_B"], adc: ["ADC_B", "ADC_C", "ADC_D"] };
+const DATASHEET = "data sheet", UNCALIBRATED = "none";
+
+// The Setup tab's "Power calibration": the board table each port uses. "" (left out of the setup) is the newest.
+function calibrationChoices(chosen) {
+  const selects = {};
+  const rows = [...PORTS.dac, ...PORTS.adc].map((port) => {
+    const tables = state.board?.[port.startsWith("DAC") ? "dac" : "adc"][port] ?? [];
+    const c = document.createElement("select"); c.dataset.control = "1";
+    const newest = tables.length ? tables[tables.length - 1].source : "data sheet";
+    c.append(new Option(`Newest (${newest})`, ""), new Option("Data sheet", DATASHEET),
+      ...tables.slice().reverse().map((t) => new Option(t.source, t.source)), new Option("None (dBFS)", UNCALIBRATED));
+    const value = chosen[port] ?? "";
+    if (![...c.options].some((o) => o.value === value)) c.append(new Option(`${value} (deleted)`, value));
+    c.value = value;
+    selects[port] = c;
+    return field(port, c);
+  });
+  const title = document.createElement("h3"); title.className = "subhead"; title.textContent = "Power calibration";
+  const box = document.createElement("div"); box.className = "setup-fields"; box.append(...rows);
+  return {
+    nodes: [title, box, hint("The board calibration table each port uses for dBm and mV (Board tab). " +
+      "None: powers relative to the converter's full scale (dBFS, % FS).")],
+    value: () => Object.fromEntries(Object.entries(selects).filter(([, c]) => c.value).map(([p, c]) => [p, c.value])),
+  };
+}
+
+// A measured table is selected in the chip's setup on arrival (Newest already follows it).
+async function selectNewTable(added) {
+  const chip = $("chip").value;
+  if (!chip || !state.profiles[chip] || !added) return;
+  const calibrations = { ...(state.profiles[chip].calibrations ?? {}) };
+  if (!(added.port in calibrations)) return;
+  calibrations[added.port] = added.name;
+  await saveSetup(chip, { calibrations });
+}
+
 function boardMenu() {
   if (!state.board) return [hint("The board calibration could not be loaded.")];
-  const editors = [];
-  const table = (kind, port, label) => {
-    const t = state.board[kind][port];
-    const area = document.createElement("textarea");
-    area.rows = 5; area.value = pointsText(t); area.dataset.control = "1"; area.spellcheck = false;
-    const source = document.createElement("input"); source.type = "text"; source.value = t.source; source.dataset.control = "1";
-    editors.push({ kind, port, area, source });
-    const box = document.createElement("div"); box.className = "board-table";
-    box.append(field(label, area, "MHz dBm"), field("Source", source));
-    return box;
-  };
+  const heading = (text) => { const h = document.createElement("h3"); h.className = "subhead"; h.textContent = text; return h; };
   const setup = state.profiles[$("chip").value] ?? NEW_PROFILE;
   const select = (options, value) => {
     const c = document.createElement("select"); c.append(...options.map((o) => new Option(o, o)));
     c.value = value; c.dataset.control = "1"; return c;
   };
-  const dac = select(Object.keys(state.board.dac_full_scale_dbm), setup.readout_dac ?? "DAC_B");
-  const adc = select(Object.keys(state.board.adc_full_scale_dbm), setup.readout_adc ?? "ADC_D");
-  const save = button("Save board", async () => {
+  const put = async (next, done) => {
     try {
-      const next = structuredClone(state.board);
-      for (const { kind, port, area, source } of editors)
-        next[kind][port] = { points: parsePoints(area.value), source: source.value || "entered by hand" };
       state.board = await api("PUT", "/api/board", next);
-      message("Saved the board calibration.");
-      updateDriveHints();
+      renderSetupPanel(); updateDriveHints(); message(done);
     } catch (e) { message(e.message, true); }
-  }, "key-strong");
+  };
+  // one box per port: its tables, newest first; the data sheet's is built in and read-only
+  const portBox = (kind, port, label) => {
+    const tables = state.board[kind][port];
+    const pick = document.createElement("select"); pick.dataset.control = "1";
+    pick.append(...tables.map((t, i) => new Option(t.source, i)).reverse(), new Option("Data sheet", "datasheet"),
+      new Option("New table (type it in)", "new"));
+    const area = document.createElement("textarea");
+    area.rows = 5; area.spellcheck = false; area.dataset.control = "1";
+    const name = document.createElement("input"); name.type = "text"; name.dataset.control = "1";
+    const save = button("Save table", async () => {
+      let points;
+      try { points = parsePoints(area.value); } catch (e) { message(e.message, true); return; }
+      const next = structuredClone(state.board), list = next[kind][port];
+      const entry = { points, source: name.value.trim() || `entered by hand, ${new Date().toISOString().slice(0, 10)}` };
+      if (pick.value === "new" || pick.value === "datasheet") list.push(entry); else list[Number(pick.value)] = entry;
+      await put(next, `Saved ${port}'s table “${entry.source}”.`);
+    });
+    const remove = button("Delete", async () => {
+      const t = tables[Number(pick.value)];
+      if (!confirm(`Delete ${port}'s table “${t.source}”? Chips that use it must pick another.`)) return;
+      const next = structuredClone(state.board);
+      next[kind][port].splice(Number(pick.value), 1);
+      await put(next, `Deleted ${port}'s table “${t.source}”.`);
+    }, "key-danger");
+    save.dataset.control = remove.dataset.control = "1";
+    const show = () => {
+      const i = pick.value, builtIn = i === "datasheet";
+      area.value = i === "new" ? "" : pointsText(builtIn ? { points: state.board.datasheet[kind] } : tables[Number(i)]);
+      name.value = i === "new" || builtIn ? "" : tables[Number(i)].source;
+      name.placeholder = builtIn ? "a new table's name" : "entered by hand";
+      remove.hidden = i === "new" || builtIn;
+    };
+    pick.onchange = show; show();
+    const keys = document.createElement("div"); keys.className = "setup-keys"; keys.append(save, remove);
+    const box = document.createElement("div"); box.className = "board-table";
+    box.append(field(label, pick), field("Points", area, "MHz dBm"), field("Name", name), keys);
+    return box;
+  };
+  const dac = select(PORTS.dac, setup.readout_dac ?? "DAC_B");
+  const adc = select(PORTS.adc, setup.readout_adc ?? "ADC_D");
   const loopback = button("Calibrate ADC from loopback", async () => {
     loopback.disabled = true; message("Measuring the loopback…");
     try {
-      state.board = await api("POST", "/api/board/adc-from-loopback", { dac: dac.value, adc: adc.value });
+      const calibrations = (state.profiles[$("chip").value] ?? NEW_PROFILE).calibrations ?? {};
+      state.board = await api("POST", "/api/board/adc-from-loopback", { dac: dac.value, adc: adc.value, calibrations });
+      await selectNewTable(state.board.added);
       renderSetupPanel();
-      message(`${adc.value} calibrated from ${dac.value}: its table now holds the measured full scale.`);
+      message(`${adc.value} calibrated from ${dac.value}: added as “${state.board.added.name}”.`);
     } catch (e) { message(e.message, true); }
     finally { loopback.disabled = false; applyControl(); }
   });
-  save.dataset.control = loopback.dataset.control = "1";
+  loopback.dataset.control = "1";
   // a DAC's table measured on the signal analyzer (only when the app was started with --analyzer)
   const analyzer = state.instruments?.analyzer;
-  const calDac = select(Object.keys(state.board.dac_full_scale_dbm), setup.control_dac || setup.i_dac || "DAC_A");
+  const calDac = select(PORTS.dac, setup.control_dac || setup.i_dac || "DAC_A");
   const loss = document.createElement("input");
   loss.type = "number"; loss.step = "0.1"; loss.min = "0"; loss.max = "20"; loss.value = "0.5"; loss.dataset.control = "1";
   const measureDac = button("Calibrate DAC with analyzer", async () => {
     measureDac.disabled = true; message(`Measuring ${calDac.value} on the ${analyzer}, every 50 MHz (about a minute)…`);
     try {
       state.board = await api("POST", "/api/board/dac-from-analyzer", { dac: calDac.value, cable_loss_db: Number(loss.value) });
+      await selectNewTable(state.board.added);
       renderSetupPanel();
       updateDriveHints();
-      message(`${calDac.value} calibrated on the ${analyzer}: its table now holds the measured output at gain 1.`);
+      message(`${calDac.value} calibrated on the ${analyzer}: added as “${state.board.added.name}”.`);
     } catch (e) { message(e.message, true); }
     finally { measureDac.disabled = false; applyControl(); }
   });
   measureDac.dataset.control = "1";
-  const dacs = Object.keys(state.board.dac_full_scale_dbm).map((p) => table("dac_full_scale_dbm", p, `${p} output at gain 1`));
-  const adcs = Object.keys(state.board.adc_full_scale_dbm).map((p) => table("adc_full_scale_dbm", p, `${p} full scale`));
-  const heading = (text) => { const h = document.createElement("h3"); h.className = "subhead"; h.textContent = text; return h; };
-  const fields = document.createElement("div"); fields.className = "setup-fields"; fields.append(...dacs, ...adcs);
+  const fields = document.createElement("div"); fields.className = "setup-fields";
+  fields.append(...PORTS.dac.map((p) => portBox("dac", p, `${p} output at gain 1`)),
+    ...PORTS.adc.map((p) => portBox("adc", p, `${p} full scale`)));
   const loop = document.createElement("div"); loop.className = "setup-fields";
   loop.append(field("From DAC", dac), field("To ADC", adc));
-  const keys = document.createElement("div"); keys.className = "setup-keys"; keys.append(save, loopback);
+  const keys = document.createElement("div"); keys.className = "setup-keys"; keys.append(loopback);
   const analyzerPart = [];
   if (analyzer) {
     const row = document.createElement("div"); row.className = "setup-fields";
@@ -563,13 +627,14 @@ function boardMenu() {
     const k = document.createElement("div"); k.className = "setup-keys"; k.append(measureDac);
     analyzerPart.push(heading(`Signal analyzer (${analyzer})`), row, k,
       hint("Cable the DAC to the analyzer's RF input. The app plays a full-scale tone every 50 MHz from 50 to " +
-        "4900 MHz, reads each peak, adds the cable loss and replaces the DAC's table."));
+        "4900 MHz, reads each peak, adds the cable loss and adds the result as a new table."));
   }
   return [fields, ...analyzerPart, heading("Loopback"), loop, keys,
-    hint("Powers at the board's SMA connectors, 50 Ω, against frequency (MHz, dBm per line). DAC: output at gain 1 " +
-      "(flat pulse). ADC: the input that reads full scale. They start from the data sheets; measure the DACs " +
-      "with the signal analyzer (or type values in). Calibrate ADC from loopback needs a short cable from the DAC to the ADC: " +
-      "it trusts the DAC's table and measures the ADC's. Shared by every chip.")];
+    hint("Every port keeps all its tables: powers at the board's SMA connectors, 50 Ω, against frequency (MHz, dBm " +
+      "per line). DAC: output at gain 1 (flat pulse). ADC: the input that reads full scale. The data sheet's are " +
+      "built in. A new measurement is added, never replacing one; each chip's Setup picks the table every port " +
+      "uses. Calibrate ADC from loopback needs a short cable from the DAC to the ADC: it trusts the DAC's table " +
+      "this chip uses and measures the ADC's.")];
 }
 
 function toggleSetup(open = !state.setupOpen) {
@@ -638,9 +703,11 @@ function setupMenu(menu) {
   controls.iq_phase_deg.step = "0.1";
   controls.iq_gain_ratio.step = "0.005";
   const extra = menu === "I/Q cal" ? [toneBlock(controls)] : [];
+  const choices = menu === "Setup" ? calibrationChoices(current.calibrations ?? {}) : null;
 
   const formProfile = () => {
     const profile = Object.fromEntries(Object.entries(controls).map(([k, c]) => [k, c.value]));
+    profile.calibrations = choices ? choices.value() : (current.calibrations ?? {});
     profile.lo_mhz = profile.lo_mhz === "" ? null : Number(profile.lo_mhz);
     profile.control_dac = profile.control_dac || null;
     profile.electrical_delay_ns = profile.electrical_delay_ns === "" ? null : Number(profile.electrical_delay_ns);
@@ -691,7 +758,7 @@ function setupMenu(menu) {
     const title = document.createElement("h3"); title.className = "subhead"; title.textContent = "Chip parameters";
     footer.push(title, parameterList());
   }
-  return [fields, ...footer];
+  return [fields, ...(choices ? choices.nodes : []), ...footer];
 }
 
 // The Output menu of a pulsed measurement: its own shot at one point, repeated for an oscilloscope.
@@ -827,7 +894,18 @@ function plotDefs(measurement = state.data?.measurement ?? state.measurement) {
     return d.views[i] && has(d.views[i]) ? { ...d.views[i], view: i } : { ...d.views[0], view: 0 };
   });
   if (store.get("units", "relative") !== "absolute") return defs;
-  return defs.map((d) => (d.absolute && has(d.absolute) ? { ...d.absolute, view: d.view } : d));
+  const units = absoluteUnits();
+  return defs.map((d) => (d.absolute && has(d.absolute)
+    ? { ...d.absolute, unit: units[d.absolute.unit] ?? d.absolute.unit, view: d.view } : d));
+}
+
+// The absolute traces' units: a run says them; before one, the chip's setup decides (its input with no
+// calibration: dBFS and % of full scale instead of dBm and mV).
+function absoluteUnits() {
+  if (state.data) return state.data.units ?? { dBm: "dBm", mV: "mV" };
+  const p = state.profiles[$("chip").value] ?? NEW_PROFILE;
+  const adc = p.return_path === "iq" ? p.i_adc : p.readout_adc;
+  return p.calibrations?.[adc] === "none" ? { dBm: "dBFS", mV: "% FS" } : { dBm: "dBm", mV: "mV" };
 }
 
 const windowViews = (k) => state.measurements[state.data?.measurement ?? state.measurement].plots[k]?.views;

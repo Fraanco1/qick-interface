@@ -11,8 +11,8 @@ from pydantic import BaseModel, Field, ValidationError
 
 from .tone import OutputTone, tone_program
 from .iq_delay import measure as measure_iq_delay
-from .power import (BoardCalibration, calibrate_adc_from_loopback, calibrate_dac_with_analyzer, drive_hints,
-                    load_board, save_board)
+from .power import (DATASHEET_ADC, DATASHEET_DAC, CalibrationLibrary, calibrate_adc_from_loopback,
+                    calibrate_dac_with_analyzer, drive_hints, load_board, save_board)
 from .scpi import ScpiError
 from .time_of_flight import measure as measure_time_of_flight
 from .frequency import FrequencyError
@@ -40,7 +40,9 @@ class RunRequest(BaseModel):
 
 def create_app(board, data_dir: Path, profiles_dir: Path, lo=None, scope=None, analyzer=None) -> FastAPI:
     app = FastAPI(title="QICK interface")
-    session = Session(board, MEASUREMENTS, data_dir, lo)
+    library = load_board(profiles_dir)  # the board calibration's tables; each chip's setup picks its own
+    board.calibration = library.resolve({})
+    session = Session(board, MEASUREMENTS, data_dir, lo, calibration=lambda profile: library.resolve(profile.calibrations))
     app.state.session = session
 
     @app.get("/api/measurements")
@@ -115,7 +117,7 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None, scope=None, a
         except ValidationError as e:
             raise HTTPException(422, [{"field": ".".join(map(str, err["loc"])), "message": err["msg"]}
                                       for err in e.errors()])
-        except LoError as e:
+        except (ValueError, LoError) as e:  # ValueError: a calibration table that is gone
             raise HTTPException(422, str(e))
         return session.state()
 
@@ -172,39 +174,49 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None, scope=None, a
             raise HTTPException(422, str(e))
         return {"time_of_flight_us": us}
 
-    board.calibration = load_board(profiles_dir)
+    def board_json(added: dict | None = None) -> dict:
+        return {**library.model_dump(), "datasheet": {"dac": DATASHEET_DAC, "adc": DATASHEET_ADC},
+                **({"added": added} if added else {})}
+
+    def keep(port: str, table) -> dict:
+        """Add a measured table to the library, kept on disk; the page selects it in the chip's setup."""
+        nonlocal library
+        library, name = library.add(port, table)
+        save_board(profiles_dir, library)
+        return board_json({"port": port, "name": name})
 
     @app.get("/api/board")
     def board_calibration():
-        return board.calibration.model_dump()
+        return board_json()
 
     @app.put("/api/board")
-    def put_board_calibration(calibration: BoardCalibration, x_client_id: str = Header()):
+    def put_board_calibration(new: CalibrationLibrary, x_client_id: str = Header()):
+        """The whole library as edited in the Board tab: tables typed in, renamed or deleted."""
+        nonlocal library
         if x_client_id != session.controller:
             raise HTTPException(403, "Only the controller can change the board calibration. Take control first.")
-        save_board(profiles_dir, calibration)
-        board.calibration = calibration
-        return calibration.model_dump()
+        save_board(profiles_dir, new)
+        library = new
+        return board_json()
 
     class LoopbackRequest(BaseModel):
         dac: str = "DAC_B"
         adc: str = "ADC_D"
+        calibrations: dict[str, str] = {}  # the chip's choices: the DAC's table it trusts
 
     @app.post("/api/board/adc-from-loopback")
     def adc_from_loopback(req: LoopbackRequest, x_client_id: str = Header()):
-        """The ADC's full scale from a cable req.dac → req.adc, trusting the DAC's table; kept in profiles/board/calibration.json."""
+        """The ADC's full scale from a cable req.dac → req.adc, trusting the DAC's table; added to the library."""
         try:
-            new = session.measure(x_client_id, lambda b: calibrate_adc_from_loopback(b, b.calibration, req.dac, req.adc),
-                                  None)
+            new = session.measure(x_client_id, lambda b: calibrate_adc_from_loopback(
+                b, library.resolve(req.calibrations), req.dac, req.adc), None)
         except NotController as e:
             raise HTTPException(403, str(e))
         except Busy as e:
             raise HTTPException(409, str(e))
         except (ValueError, KeyError) as e:
             raise HTTPException(422, str(e))
-        save_board(profiles_dir, new)
-        board.calibration = new
-        return new.model_dump()
+        return keep(req.adc, new.adc_full_scale_dbm[req.adc])
 
     @app.get("/api/instruments")
     def instruments():
@@ -221,23 +233,21 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None, scope=None, a
 
     @app.post("/api/board/dac-from-analyzer")
     def dac_from_analyzer(req: AnalyzerRequest, x_client_id: str = Header()):
-        """The DAC's output at gain 1 measured on the signal analyzer; kept in profiles/board/calibration.json."""
+        """The DAC's output at gain 1 measured on the signal analyzer; added to the library."""
         if analyzer is None:
             raise HTTPException(503, "No signal analyzer: start the app with --analyzer <its address>.")
-        if req.dac not in board.calibration.dac_full_scale_dbm:
+        if req.dac not in library.dac:
             raise HTTPException(422, f"No DAC called {req.dac}.")
         try:
             new = session.measure(x_client_id, lambda b: calibrate_dac_with_analyzer(
-                b, analyzer, b.calibration, req.dac, req.cable_loss_db), None)
+                b, analyzer, library.resolve({}), req.dac, req.cable_loss_db), None)
         except NotController as e:
             raise HTTPException(403, str(e))
         except Busy as e:
             raise HTTPException(409, str(e))
         except (ValueError, ScpiError) as e:
             raise HTTPException(422, str(e))
-        save_board(profiles_dir, new)
-        board.calibration = new
-        return new.model_dump()
+        return keep(req.dac, new.dac_full_scale_dbm[req.dac])
 
     @app.post("/api/drive-power")
     def drive_power(run: RunRequest):
@@ -246,7 +256,11 @@ def create_app(board, data_dir: Path, profiles_dir: Path, lo=None, scope=None, a
         m = MEASUREMENTS.get(run.measurement)
         if profile is None or m is None or not hasattr(m, "drive_fields"):
             return {}
-        return drive_hints(m, profile, run.params, board.calibration)
+        try:
+            calibration = library.resolve(profile.calibrations)
+        except ValueError:
+            return {}  # a table that is gone: the run says so
+        return drive_hints(m, profile, run.params, calibration)
 
     @app.post("/api/iq-delay")
     def iq_delay(profile: SetupProfile, x_client_id: str = Header()):

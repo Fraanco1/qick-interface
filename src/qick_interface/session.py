@@ -21,9 +21,10 @@ class Busy(RuntimeError):
 
 
 class Session:
-    def __init__(self, board, measurements: dict, data_dir: Path, lo=None):
+    def __init__(self, board, measurements: dict, data_dir: Path, lo=None, calibration: Callable | None = None):
         self._board = board
         self._lo = lo  # None: the LO is set by hand
+        self._calibration = calibration  # profile -> the BoardCalibration its runs use; None: keep the board's
         self._data_dir = data_dir
         self._measurements = measurements
         self._lock = threading.Lock()
@@ -80,6 +81,8 @@ class Session:
         with self._start_lock:  # two quick clicks must not start two runs
             if self.running:
                 raise Busy("A run is already in progress.")
+            if self._calibration is not None:
+                self._board.calibration = self._calibration(profile)  # ValueError: a table that is gone
             self._set_lo(profile)
             self._silence()
             self._stop.clear()
@@ -133,12 +136,14 @@ class Session:
     def _run(self, key, m, profile, params) -> None:
         self.broadcast({**self.state(), "running": True})
         u, failed = None, False
+        adc = profile.i_adc if profile.return_path == "iq" else profile.readout_adc
+        units = dict(zip(("dBm", "mV"), self._board.calibration.adc_units(adc)))  # the absolute traces' units
         try:
             for u in m.run(self._board, profile, params, self._stop.is_set):
                 self.last_update = {"type": "update", "measurement": key, "chip": profile.chip,
                                     "round": u.round, "rounds": u.rounds, "x": _json_array(u.x),
                                     "traces": {k: _json_array(v) for k, v in u.traces.items()},
-                                    "x_axis": u.x_axis or m.x_axis, "info": u.info}
+                                    "x_axis": u.x_axis or m.x_axis, "info": u.info, "units": units}
                 self.broadcast(self.last_update)
         except Exception as e:
             failed = True
@@ -153,7 +158,8 @@ class Session:
 
     def _save(self, key, profile, params, u, completed: bool) -> None:
         try:
-            rel = save_run(self._data_dir, key, profile, params, u, completed=completed)
+            rel = save_run(self._data_dir, key, profile, params, u, completed=completed,
+                           calibration=self._board.calibration.sources())
             self.broadcast({"type": "saved", "file": rel})
         except Exception as e:
             self.broadcast({"type": "error", "message": f"Could not save the run: {e}"})

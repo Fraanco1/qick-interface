@@ -144,7 +144,7 @@ Measurement: **Oscilloscope**. A two-channel scope on the board's ADC inputs: vo
 | Qubit | **Qubit pulse**: none (default), flat (as in two-tone), Gaussian or Gaussian edges (as in Rabi); then its frequency, gain, length or σ, and the delay before readout |
 
 - **Scale → Horizontal** sets the time per division and the centre time, like the scope's horizontal controls, to zoom into the record (Autoscale shows the whole 1.85 µs). It only changes your screen; the vertical scale works as in the other measurements.
-- Each window shows ADC counts, or **mV** at the ADC input with **Scale → Units: Absolute**. A full-scale tone reads ±32768 counts; the mV come from the ADC's calibration at the readout frequency (Setup → Board).
+- Each window shows ADC counts, or **mV** at the ADC input with **Scale → Units: Absolute**. A full-scale tone reads ±32768 counts; the mV come from the ADC's calibration at the readout frequency (the table the chip's Setup picks; with None, % of full scale).
 - Each redraw is a single shot, like the scope's Sample mode: noise is not averaged down.
 - Frequencies up to 2.21 GHz show (half the sample rate); a 2 GHz carrier has only about 2.2 samples per cycle.
 - PMOD0_0 goes high when each record starts, so the lab scope can trigger on it too.
@@ -221,14 +221,23 @@ Switching Autoscale off keeps the current view; **Autoscale once** fits the curr
 **Units** at the top of the Scale menu switches every measurement between:
 
 - **Relative** (default): |S21| in dB and Rabi's Signal in a.u. Only shapes and differences mean something (see `docs/s21.md`).
-- **Absolute at the ADC:** the power arriving at the board's ADC input in **dBm**, and Rabi's Signal in **mV** (peak, 50 Ω). It is measured at the IF, after any receive mixer and amplifiers, so it is the power at the board, not at the chip. Phase traces do not change.
+- **Absolute at the ADC:** the power arriving at the board's ADC input in **dBm**, and Rabi's Signal in **mV** (peak, 50 Ω). It is measured at the IF, after any receive mixer and amplifiers, so it is the power at the board, not at the chip. Phase traces do not change. When the chip's setup uses no calibration for that ADC, these read **dBFS** and **% FS** (relative to the ADC's full scale) instead.
 
 Gain fields also show their drive power at the DAC output, e.g. "≈ −7.0 dBm at DAC_B (data sheet)"; a Gaussian shows its peak, and Gaussian edges their flat part (6 dB below Flat at the same gain). On the I/Q output path it is the I DAC's power, before the mixer.
 
-Both come from the **board calibration** (Setup → **Board** tab), shared by every chip: for each DAC, its output power at gain 1 against frequency; for each ADC, the input power that reads full scale. They start from the data sheets (`docs/research/converter-power-scale.md`). To make them real:
+Both come from the **board calibration tables** (Setup → **Board** tab), shared by every chip: for each DAC, its output power at gain 1 against frequency; for each ADC, the input power that reads full scale. Every port keeps all of its tables, and new measurements never replace old ones. The data sheets' tables (`docs/research/converter-power-scale.md`) are built in. To measure:
 
-1. **ADC, from the loopback:** cable a DAC to an ADC with a short cable, pick them under **Loopback** and press **Calibrate ADC from loopback** (a few seconds). The ADC's table then follows the DAC's, so a loopback reads the DAC's power (to within the cable's ±0.7 dB ripple, which the calibration averages out). On the bench the ADC came out 2.6–7 dB above the data sheet, rising with frequency.
-2. **DAC, with a signal analyzer (by hand for now; planned to be automatic with a Keysight X-series analyzer):** measure the DAC's output at gain 1 at a few frequencies, type them in its table (one "MHz dBm" pair per line), set **Source**, and press **Save board**. Then calibrate the ADC from the loopback again.
+1. **DAC, with the signal analyzer** (app started with `--analyzer`): cable the DAC to the analyzer, pick it under **Signal analyzer**, type the **Cable loss** and press **Calibrate DAC with analyzer** (about a minute).
+2. **ADC, from the loopback:** cable a DAC to an ADC with a short cable, pick them under **Loopback** and press **Calibrate ADC from loopback** (a few seconds). The ADC's table follows the DAC table the chip uses, so a loopback reads the DAC's power (to within the cable's ripple, which the calibration averages out).
+3. **By hand:** pick **New table** in a port's list, type "MHz dBm" pairs (one per line) and a name, and press **Save table**. A port's list also shows, edits and deletes its saved tables.
+
+**Which table each chip uses:** the chip's **Setup** tab, under **Power calibration**, has one choice per port:
+- **Newest** (default): the port's newest table, or the data sheet's if none was measured;
+- **Data sheet**;
+- any saved table;
+- **None (dBFS)**: powers relative to the converter's full scale (DAC gain 1 = 0 dBFS; a full-scale ADC tone = 0 dBFS).
+
+A new calibration is added and becomes the chip's choice for that port. Each saved run records which table every port used (`calibration` in its `.json`).
 
 ## Markers
 

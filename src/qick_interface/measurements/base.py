@@ -57,6 +57,6 @@ def received_dbm(s21, program, tone: str, profile, calibration: BoardCalibration
 
 
 def received_mv(values, program, tone: str, profile, calibration: BoardCalibration):
-    """A trace linear in S21 (e.g. Rabi's projection) as peak millivolts at the ADC's SMA."""
+    """A trace linear in S21 (e.g. Rabi's projection) as peak millivolts at the ADC's SMA (% FS uncalibrated)."""
     adc, if_mhz, k = _adc_counts_per_s21(program, tone, profile)
-    return np.asarray(values) * k * calibration.adc_volts_per_count(adc, if_mhz) * 1e3
+    return np.asarray(values) * k * calibration.adc_linear_per_count(adc, if_mhz)

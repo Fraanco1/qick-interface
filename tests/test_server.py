@@ -547,16 +547,64 @@ def test_without_a_scope_the_q_delay_cannot_be_measured(client):
     assert "oscilloscope" in r.json()["detail"]
 
 
-def test_the_board_calibration_starts_from_the_data_sheets_and_the_controller_can_replace_it(client):
+def test_the_board_calibration_starts_from_the_data_sheets_and_the_controller_can_add_tables(client):
     board = client.get("/api/board").json()
-    assert board["dac_full_scale_dbm"]["DAC_B"]["source"] == "data sheet"
+    assert board["dac"]["DAC_B"] == [] and board["datasheet"]["dac"][0] == [100, -1.1]
 
-    board["dac_full_scale_dbm"]["DAC_B"] = {"points": [[100, -2.0], [4000, -4.0]], "source": "signal analyzer"}
+    board["dac"]["DAC_B"] = [{"points": [[100, -2.0], [4000, -4.0]], "source": "typed in"}]
     assert client.put("/api/board", json=board, headers=as_client("bob")).status_code == 403
     client.post("/api/control", headers=as_client("alice"))
     assert client.put("/api/board", json=board, headers=as_client("alice")).status_code == 200
 
-    assert client.get("/api/board").json()["dac_full_scale_dbm"]["DAC_B"]["source"] == "signal analyzer"
+    assert client.get("/api/board").json()["dac"]["DAC_B"][0]["source"] == "typed in"
+    board["dac"]["DAC_B"].append({"points": [[100, -2.0]], "source": "typed in"})
+    assert client.put("/api/board", json=board, headers=as_client("alice")).status_code == 422  # two of that name
+
+
+NO_CALIBRATION = {**LOOPBACK, "calibrations": {"ADC_D": "none", "DAC_B": "none"}}
+
+
+def test_a_chip_without_calibration_gets_its_powers_relative_to_full_scale(client, tmp_path):
+    client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json=NO_CALIBRATION, headers=as_client("alice"))
+
+    with client.websocket_connect("/ws") as viewer:
+        viewer.receive_json()
+        client.post("/api/runs", json=SWEEP, headers=as_client("alice"))
+        messages = messages_until_idle(viewer)
+
+    update = next(m for m in messages if m["type"] == "update")
+    assert update["units"] == {"dBm": "dBFS", "mV": "% FS"}
+    # flat_response: |I+jQ| = 0.5 at gain 1, so 20·log10(0.5 / FULL_SCALE_COUNTS) dBFS
+    from qick_interface.power import FULL_SCALE_COUNTS
+    assert update["traces"]["Power (dBm)"][0] == pytest.approx(20 * np.log10(0.5 / FULL_SCALE_COUNTS), abs=0.01)
+    saved = next(m for m in messages if m["type"] == "saved")
+    meta = json.loads((tmp_path / "data" / saved["file"]).with_suffix(".json").read_text())
+    assert meta["calibration"]["ADC_D"] == "no calibration" and meta["calibration"]["DAC_A"] == "data sheet"
+    hints = client.post("/api/drive-power", json={**SWEEP, "params": {**SWEEP["params"], "gain": 0.5}}).json()
+    assert hints["gain"] == "≈ −6.0 dBFS at DAC_B (no calibration)"
+
+
+def test_a_calibrated_run_says_its_units_are_dbm(client):
+    client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json=LOOPBACK, headers=as_client("alice"))
+
+    with client.websocket_connect("/ws") as viewer:
+        viewer.receive_json()
+        client.post("/api/runs", json=SWEEP, headers=as_client("alice"))
+        update = next(m for m in messages_until_idle(viewer) if m["type"] == "update")
+
+    assert update["units"] == {"dBm": "dBm", "mV": "mV"}
+
+
+def test_a_run_whose_chosen_table_was_deleted_says_so(client):
+    client.post("/api/control", headers=as_client("alice"))
+    client.put("/api/profiles/Loopback", json={**LOOPBACK, "calibrations": {"ADC_D": "loopback, gone"}},
+               headers=as_client("alice"))
+
+    response = client.post("/api/runs", json=SWEEP, headers=as_client("alice"))
+
+    assert response.status_code == 422 and "ADC_D" in response.text
 
 
 def test_the_adc_is_calibrated_from_the_loopback(tmp_path):
@@ -573,9 +621,30 @@ def test_the_adc_is_calibrated_from_the_loopback(tmp_path):
 
         board = client.post("/api/board/adc-from-loopback", json={"dac": "DAC_B", "adc": "ADC_D"},
                             headers=as_client("alice")).json()
+        again = client.post("/api/board/adc-from-loopback", json={"dac": "DAC_B", "adc": "ADC_D"},
+                            headers=as_client("alice")).json()
 
-        assert board["adc_full_scale_dbm"]["ADC_D"]["points"][0][1] == pytest.approx(5.0, abs=0.01)
-        assert client.get("/api/board").json() == board  # kept
+        assert board["added"] == {"port": "ADC_D", "name": board["adc"]["ADC_D"][0]["source"]}
+        assert board["adc"]["ADC_D"][0]["points"][0][1] == pytest.approx(5.0, abs=0.01)
+        assert len(again["adc"]["ADC_D"]) == 2  # the first one is kept
+        assert client.get("/api/board").json()["adc"] == again["adc"]
+
+
+def test_the_loopback_trusts_the_dac_table_the_chip_chose(tmp_path):
+    from qick_interface.power import FULL_SCALE_COUNTS
+
+    def reads_full_scale(program):
+        return [FULL_SCALE_COUNTS * program.get_pulse_param("probe", "gain") + 0 * ResonatorSweep.if_axis(program)]
+
+    app = create_app(FakeBoard(SOCCFG, reads_full_scale), data_dir=tmp_path / "d", profiles_dir=tmp_path / "p")
+    with TestClient(app) as client:
+        client.post("/api/control", headers=as_client("alice"))
+
+        board = client.post("/api/board/adc-from-loopback", json={"dac": "DAC_B", "adc": "ADC_D",
+                            "calibrations": {"DAC_B": "none"}}, headers=as_client("alice")).json()
+
+    assert board["adc"]["ADC_D"][0]["points"][0][1] == pytest.approx(0.0, abs=0.01)
+    assert "no calibration" in board["adc"]["ADC_D"][0]["source"]
 
 
 def test_gain_fields_get_their_drive_power_in_dbm(client):
@@ -609,7 +678,7 @@ def test_a_calibration_saved_by_the_first_version_is_moved_out_of_the_chips(tmp_
     app = create_app(FakeBoard(SOCCFG, flat_response), data_dir=tmp_path / "data", profiles_dir=tmp_path / "profiles")
     with TestClient(app) as client:
         assert client.get("/api/profiles").json() == {}
-        assert client.get("/api/board").json()["adc_full_scale_dbm"]["ADC_D"]["source"] == "loopback, first version"
+        assert client.get("/api/board").json()["adc"]["ADC_D"][0]["source"] == "loopback, first version"
     assert not (tmp_path / "profiles" / "board.json").exists()
 
 
@@ -675,10 +744,10 @@ def test_the_dac_is_calibrated_with_the_analyzer_and_kept(tmp_path, monkeypatch)
         response = client.post("/api/board/dac-from-analyzer", json=request, headers=as_client("alice"))
 
         assert response.status_code == 200
-        kept = client.get("/api/board").json()["dac_full_scale_dbm"]["DAC_A"]
+        kept = client.get("/api/board").json()["dac"]["DAC_A"][-1]
     assert all(dbm == pytest.approx(-1.0) for _, dbm in kept["points"])  # −1.5 read + 0.5 of cable
     assert "N9032B" in kept["source"]
-    assert json.loads((tmp_path / "profiles" / "board" / "calibration.json").read_text())["dac_full_scale_dbm"]["DAC_A"] == kept
+    assert json.loads((tmp_path / "profiles" / "board" / "calibration.json").read_text())["dac"]["DAC_A"][-1] == kept
     assert pxa.continuous and board.playing is None  # the analyzer sweeps again, the DAC is silent
 
 
