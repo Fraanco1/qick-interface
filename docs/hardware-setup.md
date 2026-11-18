@@ -3,17 +3,26 @@
 How the board, the lab PC and the RF chain fit together, and how to install and repair the board service.
 
 ```
-lab PCs ──lab network──▶ lab PC: QICK Analyzer (:8080) ──USB link 192.168.3.x──▶ RFSoC 4x2: QICK Pyro4 service (:8888)
-                                                                                    │
-                                                         DACs ──▶ mixers + LO ──▶ cryostat ──▶ mixer ──▶ ADC
+browsers on the lab network (CNEA Wi-Fi)
+        │  http://192.168.1.111:8090
+        ▼
+Windows lab PC: QICK Analyzer, Wi-Fi 192.168.1.111 · Ethernet 192.168.1.2
+        │  instruments' wired network (a switch; separate from the Wi-Fi)
+        ├──▶ RFSoC 4x2 192.168.1.67: QICK Pyro4 service (:8888)
+        ├──▶ LO: EXG N5173B 192.168.1.100 (SCPI :5025)
+        └──▶ signal analyzer: PXA N9032B 169.254.136.224 (SCPI :5025)
+
+RFSoC 4x2: DACs ──▶ mixers + LO ──▶ cryostat ──▶ mixer ──▶ ADCs
 ```
+
+The two networks both use 192.168.1.x addresses but are separate, and Windows doesn't route between them. So a browser on the Wi-Fi reaches the board and the instruments only through the app.
 
 ## The board
 
 | | |
 |---|---|
 | Board | Real Digital RFSoC 4x2, PYNQ image 2022_10_22, Python 3.10 |
-| Address | `192.168.1.67` on the instruments' wired network (fixed, `board/eth0`), where the QICK service listens. The micro-USB link still gives `192.168.3.1` to a PC plugged into it, for SSH and installing: `ssh xilinx@192.168.3.1` |
+| Address | `192.168.1.67` on the instruments' wired network (fixed, set by `board/eth0`), where the QICK service listens. The board's Ethernet goes to the instruments' switch. The micro-USB link still gives `192.168.3.1` to a PC plugged into it, for SSH and installing (`ssh xilinx@192.168.3.1`); it isn't needed to measure. |
 | Lab PC | Windows 10 PC `DESKTOP-F8DQ84A`: wired `192.168.1.2` (instruments' network, with the board), Wi-Fi `192.168.1.111` (where browsers reach the page: `http://192.168.1.111:8090`). The app runs there with `--port 8090`, since National Instruments' web server holds 8080; the Windows firewall rule "QICK Analyzer 8090" lets the local network in. The two networks share the 192.168.1.x numbers but are separate: from Wi-Fi the board is reached only through this PC. |
 | QICK library | 0.2.442, in `~/jupyter_notebooks/qick` (must match the PC; see below) |
 | Firmware | `~/jupyter_notebooks/qick_firmware/qick_4x2.bit` (custom build, 2025-12-09, tProc v2). **Not** the `qick_4x2.bit` bundled with the QICK library, which lacks the dynamic readouts the app needs. |
@@ -148,6 +157,9 @@ The lab PC (Windows) reaches them over SCPI on port 5025:
 
 | Instrument | Address | Notes |
 |---|---|---|
+| RFSoC 4x2 board | `192.168.1.67` | QICK Pyro4 service on port 8888 (not SCPI) |
+| Lab PC (its Ethernet) | `192.168.1.2` | Runs the app; also `169.254.10.2` for the PXA (below) |
+| Network analyzer: Keysight PNA-X | `192.168.1.6` | Plugged in only when needed (it was used to measure cables); not used by the app |
 | LO: Keysight (Agilent) EXG N5173B, 9 kHz–20 GHz, −135 to +30 dBm (options 520, 1EA, 1E1) | `192.168.1.100` | |
 | Signal analyzer: Keysight PXA N9032B | `169.254.136.224` | The app uses it with `--analyzer 169.254.136.224` (the Windows task does) for Setup → Board → **Calibrate DAC with analyzer**: a full-scale tone every 50 MHz from 50 to 4900 MHz, 1 MHz span, peak marker, plus the cable loss you type. During it the trace is set to clear/write (the PXA was found in Max Hold, which returned the same old peak every time) and put back afterwards; a peak marker outside the span stops the calibration. Measured 2026-11-06 with a 41 cm cable (0.15 dB): both DACs give −1.2 to −1.6 dBm below 1 GHz and fall to about −9 dBm at 4.9 GHz, much steeper than the data sheet; ADC_D and ADC_C (loopback from DAC_A) read full scale at +5.2 to +5.9 dBm, 2.5–3.5 dB above the data sheet. Its own automatic (link-local) address: its IP can't be changed without its administrator account. The lab PC has a second address on its Ethernet, `169.254.10.2/16`, and a route `169.254.136.224/32` through Ethernet; without the route Windows sends 169.254.x.x through Tailscale and gets no reply. It doesn't answer ping (its firewall); SCPI works. If the PXA ever shows another 169.254 address, replace the route: `New-NetRoute -DestinationPrefix <address>/32 -InterfaceAlias Ethernet -NextHop 0.0.0.0 -RouteMetric 0`. |
 
@@ -251,7 +263,19 @@ Get-Content data\server.log -Tail 30              # its log
 Stop-ScheduledTask "QICK Analyzer"; Start-ScheduledTask "QICK Analyzer"   # restart, e.g. after updating the code
 ```
 
-Browsers reach it at `http://192.168.1.111:8090`. Machines that use the CNEA proxy must bypass it for `192.168.1.111` (the proxy answers 403).
+Browsers reach it at `http://192.168.1.111:8090`. Machines that use the CNEA proxy must bypass it for `192.168.1.111` (the proxy answers 403); the [user guide](user-guide.md#opening-the-app) says how.
+
+**Changing how it starts.** The options are in `scripts\windows\run_server.cmd`: `--port 8090 --lo 192.168.1.100 --analyzer 169.254.136.224`. Edit them there and restart the task. For example, while the EXG is off the network, remove `--lo 192.168.1.100` and set the LO by hand. Otherwise every run with an LO in its setup stops with "No answer from the LO at 192.168.1.100".
+
+**Updating the code.** The lab PC has no GitHub access over SSH. Copy the commits over as a git bundle, then restart the task:
+
+```bash
+git bundle create update.bundle <last commit on the lab PC>..foundation          # on your PC
+scp update.bundle franco@192.168.1.111:C:/Users/franco/update.bundle
+ssh franco@192.168.1.111 "cd C:\Users\franco\qick-interface && git pull C:\Users\franco\update.bundle foundation"
+```
+
+**No remote access from outside the institute.** Tailscale is installed on the lab PC but logged out: the CNEA proxy refuses its servers (403 for `*.tailscale.com`, checked 2026-11-06). Remote access would have to come from the institute, e.g. its VPN. Never expose the app publicly: it has no passwords, and whoever reaches it controls the instruments.
 
 ## Troubleshooting
 
@@ -263,4 +287,7 @@ Browsers reach it at `http://192.168.1.111:8090`. Machines that use the CNEA pro
 | Service is `failed` after 5 attempts | Read the log for the cause, fix it, then `reset-failed` and `start` (above). |
 | `QICK version mismatch` | See [QICK versions](#qick-versions). |
 | A notebook on the board broke when the app started | Both loaded the firmware; see [The service owns the board](#the-service-owns-the-board). |
+| A browser shows **403 Forbidden** for `http://192.168.1.111:8090` | The CNEA proxy. Bypass it for `192.168.1.111` ([user guide](user-guide.md#opening-the-app)). |
+| The page doesn't load at all | The lab PC is off or the app stopped: `Get-ScheduledTask "QICK Analyzer"` and `Get-Content data\server.log -Tail 30` on the lab PC. |
+| Runs stop with "No answer from the LO at 192.168.1.100" | The EXG is off the network. Plug it back in, or start the app without `--lo` (see [The app on the Windows lab PC](#the-app-on-the-windows-lab-pc)). |
 | curl or browsers can't reach `localhost:8080` on the lab PC | The lab's HTTP proxy intercepts it. Bypass the proxy for local addresses (e.g. `NO_PROXY=localhost`, or `curl --noproxy localhost`). |

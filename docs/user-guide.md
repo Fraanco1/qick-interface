@@ -2,9 +2,28 @@
 
 How to measure a chip with QICK Analyzer. Words in *italics* are defined in the [glossary](../GLOSSARY.md).
 
-## The page
+## Opening the app
 
-Open `http://<lab-PC-address>:8080`.
+The app runs all the time on the Windows lab PC. It starts with the PC, even before anyone logs in. From any computer or phone on the lab network (the CNEA Wi-Fi or wired network in the lab) open:
+
+**http://192.168.1.111:8090**
+
+**Bypass the CNEA proxy for that address first.** The proxy doesn't forward requests to lab addresses: it answers **403 Forbidden**.
+
+| Where | How |
+|---|---|
+| Windows | Settings → Network & Internet → Proxy → under *Manual proxy setup*, add `192.168.1.111` to "Use the proxy server except for addresses that start with" (entries separated by `;`). Chrome and Edge use this setting. |
+| Firefox | Settings → General → Network Settings → Settings… → add `192.168.1.111` to "No proxy for". |
+| Linux (GNOME) | Settings → Network → Network Proxy → add `192.168.1.111` to "Ignore Hosts". For terminal tools: `export NO_PROXY=192.168.1.111`. |
+| Phone | In the Wi-Fi network's proxy settings, add `192.168.1.111` to the bypass list. |
+
+What else to know:
+
+- **Only from inside the lab network.** The board and the instruments are on a separate wired network that only the lab PC joins; browsers reach them through the app. There is no access from outside the institute: the CNEA proxy blocks remote-access tools like Tailscale, and opening the app to the internet would let anyone control the instruments.
+- **Several people can have the page open.** All see the same traces live; one at a time controls the board (below).
+- **If the page doesn't load:** check the proxy bypass, that you're on the lab network, and that the lab PC is on. If the page loads but says it can't reach the board, see [When something goes wrong](#when-something-goes-wrong).
+
+## The page
 
 - **Title bar:** the *chip* being measured and its **Setup** key, **Help** (the steps to measure, in short, with a link to this guide), the *measurement*, who controls the board, your name, and **Take control**.
 - **Screen:** two plot windows on a 10-division grid. The line above each window shows the trace, its scale per division and the reference value (at the ▶ arrow), like a PNA-X.
@@ -146,7 +165,7 @@ Measurement: **CW Time**. Like the PNA-X sweep type of the same name: the tone s
 
 - **Time per point** = (readout window + 50 ns) × averages per point. The readout needs a short gap after each window, and the spacing is rounded up to the board's 1.6 ns clock. The x axis runs from 0 to (points − 1) × that, in µs, ms or s. The settling time counts from when the tone starts.
 - **Noise:** the readout window plays the role of the PNA-X's IF bandwidth (IF BW ≈ 1 / window): 10 µs is like 100 kHz, 100 µs like 10 kHz. For less noise than a 100 µs window gives, raise **Averages per point**.
-- Points within a sweep are exactly spaced by the board's clock. Between sweeps there is a short gap while the data travels to the PC, as on a PNA-X. Below about 2 µs per window the board measures faster than the USB link carries the data (16 bytes per window, about 8–11 MB/s), so that gap grows; the time axis within each sweep stays correct.
+- Points within a sweep are exactly spaced by the board's clock. Between sweeps there is a short gap while the data travels to the PC, as on a PNA-X. Below about 2 µs per window the board can measure faster than the link carries the data (16 bytes per window; 8–11 MB/s was measured over the old USB link, and the Ethernet link is not measured yet), so that gap grows; the time axis within each sweep stays correct.
 - The status bar counts **Sweep n**. When you press **Stop**, every sweep of the run is saved: `s21` has one row per sweep, and `sweep_end_unix_s` gives the time each sweep reached the PC. A long run uses about 16 bytes per point per sweep of memory on the lab PC until it is saved.
 
 ### Oscilloscope: the voltage at the ADCs

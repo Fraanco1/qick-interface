@@ -13,6 +13,9 @@ It measures transmon and fluxonium chips:
 - **Rabi:** sweep the qubit pulse amplitude (Gaussian) or length (flat, or with Gaussian edges), with a fitted π-pulse.
 - **I/Q return path:** an I/Q mixer into two ADCs, combined in software to reject the image band, with an automatic **RX I/Q calibration** (gain, phase, delay).
 - **Scope sequences:** two-tone and Rabi play their own shot at one point, with an oscilloscope trigger, to check the pulses. A continuous tone for I/Q calibration.
+- **TX I/Q calibration on a signal analyzer:** the Q delay between the two DACs, then the Q phase and gain against IF, measured on a Keysight PXA and kept as a table in the chip's setup.
+- **Absolute units:** powers in dBm and voltages in mV at the board's connectors, from calibration tables of the DACs (measured on the PXA) and ADCs (from a loopback). Each chip picks which tables it uses, or none (dBFS).
+- **Instrument control:** sets the Keysight LO generator from the chip's setup before each run.
 
 Each chip keeps its own wiring (*setup profile*) and its own measured values (*chip parameters*), so each measurement starts from what the previous one found.
 
@@ -20,7 +23,13 @@ MKID arrays are read with Mazin Lab's MKIDGen3 instead; see [ADR 0004](docs/adr/
 
 ## Quick start
 
-On the lab PC wired to the board (the Windows PC `192.168.1.111`/`192.168.1.2`; board at `192.168.1.67` on the instruments' wired network):
+**In the lab** the app is always running on the Windows lab PC. From any computer on the lab network open:
+
+**http://192.168.1.111:8090**
+
+Bypass the CNEA proxy for `192.168.1.111` first, or the page answers 403; see [Opening the app](docs/user-guide.md#opening-the-app).
+
+**Running it yourself** (to develop, or on another PC wired to the board):
 
 ```bash
 python3 -m venv .venv
@@ -31,19 +40,17 @@ python3 -m venv .venv
 
 On Windows the same, with `py -3.12 -m venv .venv` and `.venv\Scripts\python.exe` in place of `.venv/bin/python`.
 
-Then open `http://<lab-PC-address>:8080` from any computer in the lab.
-
-The board must be running the QICK Pyro4 service; see [hardware setup](docs/hardware-setup.md).
+Then open `http://localhost:8080`, or `http://<that PC's address>:8080` from another computer. The PC must be on the instruments' wired network, where the board is (`192.168.1.67`), and the board must be running the QICK Pyro4 service; see [hardware setup](docs/hardware-setup.md).
 
 | Option | Default | Meaning |
 |---|---|---|
-| `--fake` | off | Simulate the board: a resonator, a qubit and Rabi oscillations |
+| `--fake` | off | Simulate the board (a resonator, a qubit and Rabi oscillations), an LO, and a signal analyzer that sees the DACs and an I/Q mixer |
 | `--board` | `192.168.1.67` | Address of the board's Pyro4 nameserver |
 | `--host` | `0.0.0.0` | Address the page is served on (`0.0.0.0` = all interfaces) |
 | `--port` | `8080` | Port the page is served on |
 | `--data` | `data` | Folder where runs are saved |
 | `--profiles` | `profiles` | Folder with setup profiles and chip parameters |
-| `--analyzer` | none | IP address of the Keysight X-series signal analyzer (PXA N9032B); enables Setup → Board → Calibrate DAC with analyzer |
+| `--analyzer` | none | IP address of the Keysight X-series signal analyzer (PXA N9032B); enables Setup → Board → **Calibrate DAC with analyzer** and Setup → I/Q cal → **Calibrate I/Q** |
 | `--lo` | none | IP address of the Keysight LO (EXG N5173B or CXG N5166B); the app then sets it from the setup before each run. Without it, the LO is set by hand |
 
 ## Documentation

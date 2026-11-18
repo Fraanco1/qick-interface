@@ -7,7 +7,7 @@ How to work on QICK Analyzer. Read [architecture.md](architecture.md) first for 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest -q                          # all tests, about 1 s, no hardware
+.venv/bin/pytest -q                          # all tests, about 10 s, no hardware
 .venv/bin/python -m qick_interface --fake    # the full app on a simulated board, http://localhost:8080
 ```
 
